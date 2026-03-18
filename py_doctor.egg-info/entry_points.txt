@@ -1,0 +1,2 @@
+[console_scripts]
+py_doctor = py_doctor.cli:main

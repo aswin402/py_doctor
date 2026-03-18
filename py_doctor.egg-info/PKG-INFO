@@ -1,0 +1,77 @@
+Metadata-Version: 2.4
+Name: py-doctor
+Version: 1.0.0
+Summary: Diagnose and fix your FastAPI project health
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: ruff>=0.3.0
+Requires-Dist: mypy>=1.8.0
+Requires-Dist: bandit>=1.7.7
+Requires-Dist: vulture>=2.11
+Requires-Dist: rich>=13.7.0
+Requires-Dist: typer>=0.12.0
+Requires-Dist: tomli>=2.0.1
+
+# py_doctor
+
+Diagnose and fix your FastAPI project health - Python equivalent of flutter_doctor.
+
+## Installation
+
+### Recommended — uv tool (no venv needed)
+
+git clone https://github.com/yourname/py_doctor
+cd py_doctor
+./tool/activate.sh
+
+### Alternative — uv pip
+
+uv pip install git+https://github.com/yourname/py_doctor
+
+### Alternative — pip
+
+pip install py-doctor
+
+## Usage on any FastAPI project
+
+# No venv activation needed — just run:
+
+py_doctor /path/to/your/fastapi/project --verbose
+
+# Or from inside the project:
+
+cd /path/to/your/fastapi/project
+py_doctor . --verbose
+py_doctor . --score
+py_doctor . --no-md
+
+## Config (optional) — add to your project
+
+Create py_doctor.config.json in your FastAPI project root:
+{
+"ignore": {
+"rules": ["bandit/B404", "ruff/E501"],
+"files": ["migrations/", "tests/", "alembic/"]
+}
+}
+
+Or in pyproject.toml:
+[tool.py_doctor.ignore]
+rules = ["bandit/B404", "ruff/E501"]
+files = ["migrations/", "tests/"]
+
+## CLI Usage
+
+```
+py_doctor .                        # scan current directory
+py_doctor . --verbose              # show file:line per rule
+py_doctor . --score                # output score only for CI
+py_doctor . --no-lint              # skip lint pass
+# ... full usage from spec
+```
+
+See terminal output example in project spec.
+
+## Config
+
+pyproject.toml [tool.py_doctor] or py_doctor.config.json
