@@ -1,8 +1,10 @@
 import os
 import sys
+import json
 import asyncio
+from datetime import date
 
-# Real ANSI escape constants — never use \\x1b or \\033 as strings
+# Real ANSI escape constants
 ESC = '\x1b'
 R   = f'{ESC}[0m'
 RED    = f'{ESC}[31m'
@@ -87,24 +89,58 @@ class Reporter:
         sys.stderr.flush()
 
     def _print_lint_diagnostics(self, diagnostics):
-        lints = [d for d in diagnostics if d['type'] in ('ERR', 'WARN')]
+        lints = [d for d in diagnostics if d['type'] in ('ERR', 'WARN', 'INFO')]
         if not lints:
             return
-        print()
-        print(self._c(GRAY1, 'LINT DIAGNOSTICS'))
-        print()
-        for d in lints[:15]:
-            if d['type'] == 'ERR':
-                tag = f'{BGRED} ERR {R}'
-            else:
-                tag = f'{BGYEL} WARN {R}'
-            rule = self._c(CYAN, d['rule'])
-            loc = self._c(GRAY, d.get('location', ''))
-            pad = max(2, 76 - 6 - len(d['rule']) - len(d.get('location', '')))
-            print(f'{tag}  {rule}{" " * pad}{loc}')
-            if self.verbose and d.get('description'):
-                print(f'       {self._c(GRAY, d["description"])}')
+        
+        # Group by severity
+        errs = [d for d in lints if d['type'] == 'ERR']
+        warns = [d for d in lints if d['type'] == 'WARN']
+        infos = [d for d in lints if d['type'] == 'INFO']
+        
+        if errs:
             print()
+            print(self._c(GRAY1, f'ERRORS ({len(errs)})'))
+            print()
+            for d in errs[:20]:
+                tag = f'{BGRED} ERR {R}'
+                rule = self._c(CYAN, d['rule'])
+                loc = self._c(GRAY, d.get('location', ''))
+                pad = max(2, 76 - 6 - len(d['rule']) - len(d.get('location', '')))
+                print(f'{tag}  {rule}{" " * pad}{loc}')
+                if self.verbose and d.get('description'):
+                    print(f'       {self._c(GRAY, d["description"])}')
+                print()
+        
+        if warns:
+            print(self._c(GRAY1, f'WARNINGS ({len(warns)})'))
+            print()
+            for d in warns[:20]:
+                tag = f'{BGYEL} WARN {R}'
+                rule = self._c(CYAN, d['rule'])
+                loc = self._c(GRAY, d.get('location', ''))
+                pad = max(2, 76 - 6 - len(d['rule']) - len(d.get('location', '')))
+                print(f'{tag}  {rule}{" " * pad}{loc}')
+                if self.verbose and d.get('description'):
+                    print(f'       {self._c(GRAY, d["description"])}')
+                print()
+        
+        if infos and self.verbose:
+            print(self._c(GRAY1, f'INFO ({len(infos)})'))
+            print()
+            for d in infos[:10]:
+                tag = f'{BGBLU} INFO {R}'
+                rule = self._c(CYAN, d['rule'])
+                loc = self._c(GRAY, d.get('location', ''))
+                pad = max(2, 76 - 6 - len(d['rule']) - len(d.get('location', '')))
+                print(f'{tag}  {rule}{" " * pad}{loc}')
+                if d.get('description'):
+                    print(f'       {self._c(GRAY, d["description"])}')
+                print()
+        
+        if len(lints) > 50:
+            print(self._c(GRAY, f'  ... and {len(lints) - 50} more diagnostics'))
+        
         print(self._c(GRAY, '─' * 76))
         print()
 
@@ -112,6 +148,7 @@ class Reporter:
         deads = [d for d in diagnostics if d['type'] == 'DEAD']
         if not deads:
             return
+        
         print(self._c(GRAY1, 'DEAD CODE'))
         print()
         for d in deads:
@@ -183,11 +220,15 @@ class Reporter:
 
     def _print_priority_fixes(self, diagnostics):
         print('Top priority fixes:')
-        errs = [d for d in diagnostics if d['type'] == 'ERR'][:3]
-        for d in errs:
-            arrow = self._c(RED, '→')
-            rule = self._c(CYAN, d['rule'])
-            print(f'{arrow} Fix {rule} — {d.get("description", "")}')
+        errs = [d for d in diagnostics if d['type'] == 'ERR'][:5]
+        if errs:
+            for d in errs:
+                arrow = self._c(RED, '→')
+                rule = self._c(CYAN, d['rule'])
+                desc = d.get("description", "")[:60]
+                print(f'{arrow} Fix {rule} — {desc}')
+        else:
+            print(self._c(GREEN, '✓ No errors found!'))
         print()
 
     def _print_footer(self):
@@ -199,7 +240,6 @@ class Reporter:
             self, project_path, diagnostics, detector,
             score, errors, warnings, dead_code, file_count):
 
-        from datetime import date
         buf = []
         w = buf.append
         today = date.today().strftime('%Y-%m-%d')
@@ -240,7 +280,7 @@ class Reporter:
             w('')
             w('> These cause crashes, data loss, or security issues.')
             w('')
-            for d in errs:
+            for d in errs[:20]:
                 rule = d.get('rule', '')
                 loc = d.get('location', '')
                 desc = d.get('description', '')
@@ -336,6 +376,7 @@ def _err_why(rule: str) -> str:
         'fastapi/sync-in-async-route': 'Blocking call freezes the entire event loop.',
         'fastapi/hardcoded-secret': 'Secret in source code visible to anyone with repo access.',
         'sqlalchemy/missing-session-close': 'Unclosed session leaks DB connections.',
+        'sqlalchemy/missing-async-query': 'Sync query in async function blocks the event loop.',
         'bandit/B102': 'exec() runs arbitrary code — critical security risk.',
         'bandit/B301': 'pickle.loads() with untrusted data allows remote code execution.',
         'bandit/B303': 'MD5/SHA1 are cryptographically broken — use SHA256.',
@@ -378,6 +419,13 @@ def _err_fix_code(rule: str, desc: str) -> list:
             'from pydantic_settings import BaseSettings',
             'class Settings(BaseSettings):',
             '    secret_key: str',
+        ],
+        'sqlalchemy/missing-async-query': [
+            '# Before (wrong):',
+            'result = session.execute(query)',
+            '',
+            '# After (correct):',
+            'result = await session.execute(query)',
         ],
         'mypy/type-error': [
             '# Fix the type mismatch shown in the error message.',

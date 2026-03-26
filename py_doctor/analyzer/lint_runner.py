@@ -2,12 +2,40 @@ import ast
 import json
 import os
 import subprocess
+from pathlib import Path
+from typing import List, Dict, Any
 
 
 class LintRunner:
     def __init__(self, project_path: str, ignore_rules: list):
         self.project_path = project_path
         self.ignore_rules = ignore_rules
+        # Import custom rules properly
+        self._load_custom_rules()
+
+    def _load_custom_rules(self):
+        """Load all custom rules from the rules directory"""
+        self.custom_rules = []
+        try:
+            from py_doctor.rules import base_rule
+            from py_doctor.rules import fastapi_rules
+            from py_doctor.rules import sqlalchemy_rules
+            from py_doctor.rules import pydantic_rules
+            from py_doctor.rules import structlog_rules
+            
+            # Collect all rule classes that inherit from BaseRule
+            import inspect
+            import sys
+            
+            for module in [fastapi_rules, sqlalchemy_rules, pydantic_rules, structlog_rules]:
+                for name, obj in inspect.getmembers(module):
+                    if (inspect.isclass(obj) and 
+                        hasattr(obj, 'check') and 
+                        hasattr(obj, 'rule_id') and
+                        obj.rule_id):
+                        self.custom_rules.append(obj)
+        except Exception as e:
+            print(f"Warning: Could not load custom rules: {e}")
 
     async def run(self) -> list[dict]:
         diagnostics = []
@@ -20,22 +48,25 @@ class LintRunner:
 
     async def _run_ruff(self) -> list[dict]:
         result = None
+        exclude_dirs = 'build,dist,.eggs,py_doctor.egg-info,.venv,venv,env,__pycache__'
+        
         for cmd in (
             ['uv', 'run', 'ruff', 'check', self.project_path,
              '--output-format=json', '--quiet',
-             '--exclude', 'build,dist,.eggs,py_doctor.egg-info,.venv,venv,env'],
+             '--exclude', exclude_dirs],
             ['ruff', 'check', self.project_path,
              '--output-format=json', '--quiet',
-             '--exclude', 'build,dist,.eggs,py_doctor.egg-info,.venv,venv,env'],
+             '--exclude', exclude_dirs],
         ):
             try:
                 result = subprocess.run(
                     cmd, capture_output=True, text=True,
-                    cwd=self.project_path
+                    cwd=self.project_path,
+                    timeout=30
                 )
-                if result.stdout.strip():
+                if result.returncode == 0 or result.stdout.strip():
                     break
-            except FileNotFoundError:
+            except (FileNotFoundError, subprocess.TimeoutExpired):
                 continue
 
         if result is None or not result.stdout.strip():
@@ -53,12 +84,24 @@ class LintRunner:
                 file_path = os.path.relpath(abs_path, self.project_path)
             except ValueError:
                 file_path = abs_path
-            if file_path.startswith('.venv') or file_path.startswith('venv'):
+            
+            # Skip venv files
+            if any(skip in file_path for skip in ['.venv', 'venv', 'env', '__pycache__']):
                 continue
+                
             row = issue.get('location', {}).get('row', 0)
             code = issue.get('code', 'unknown')
             message = issue.get('message', '')
-            sev = 'ERR' if code.startswith(('E9', 'F8', 'F9')) else 'WARN'
+            
+            # Determine severity based on ruff's severity
+            severity = issue.get('fix', {}).get('applicability', '')
+            if code.startswith(('E9', 'F8', 'F9')) or severity == 'unsafe':
+                sev = 'ERR'
+            elif code.startswith(('E', 'F')):
+                sev = 'WARN'
+            else:
+                sev = 'INFO'
+                
             diagnostics.append({
                 'type': sev,
                 'rule': f'ruff/{code}',
@@ -72,99 +115,47 @@ class LintRunner:
         skip_dirs = {
             'venv', 'env', '__pycache__', '.venv',
             'build', 'dist', 'eggs', '.eggs', 'py_doctor.egg-info',
+            'migrations', 'alembic', 'tests', 'test', 'node_modules'
         }
+        
         for root, dirs, files in os.walk(self.project_path):
-            dirs[:] = [d for d in dirs
+            # Filter directories
+            dirs[:] = [d for d in dirs 
                        if not d.startswith('.')
                        and d not in skip_dirs]
+            
             for filename in files:
                 if not filename.endswith('.py'):
                     continue
+                    
                 filepath = os.path.join(root, filename)
                 rel_path = os.path.relpath(filepath, self.project_path)
+                
+                # Skip __init__.py for some checks
+                skip_file = filename == '__init__.py'
+                
                 try:
                     with open(filepath, 'r', encoding='utf-8') as f:
                         source = f.read()
+                    
                     tree = ast.parse(source, filename=filepath)
-                    diags = self._check_file(tree, rel_path)
-                    diagnostics.extend(diags)
-                except SyntaxError:
+                    
+                    # Apply each custom rule
+                    for rule_class in self.custom_rules:
+                        # Skip certain files for specific rules
+                        if skip_file and 'import' in rule_class.rule_id:
+                            continue
+                            
+                        try:
+                            diags = rule_class.check(tree, source, rel_path)
+                            diagnostics.extend(diags)
+                        except Exception as e:
+                            # Silently continue on rule errors
+                            pass
+                            
+                except (SyntaxError, UnicodeDecodeError):
                     continue
                 except Exception:
                     continue
-        return diagnostics
-
-    def _check_file(self, tree, rel_path) -> list[dict]:
-        diagnostics = []
-
-        skip_print = any(name in rel_path for name in (
-            'reporter', 'cli', 'main', 'app',
-            'console', 'terminal', 'output', 'display',
-        ))
-
-        for node in ast.walk(tree):
-            # fastapi/sync-in-async-route
-            if isinstance(node, ast.AsyncFunctionDef):
-                for child in ast.walk(node):
-                    if (isinstance(child, ast.Call) and
-                            isinstance(child.func, ast.Attribute) and
-                            child.func.attr == 'sleep' and
-                            isinstance(child.func.value, ast.Name) and
-                            child.func.value.id == 'time'):
-                        diagnostics.append({
-                            'type': 'ERR',
-                            'rule': 'fastapi/sync-in-async-route',
-                            'location': f'{rel_path}:{child.lineno}',
-                            'description': 'time.sleep() blocks event loop — use await asyncio.sleep()',
-                        })
-
-            # fastapi/missing-response-model
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                for decorator in node.decorator_list:
-                    if (isinstance(decorator, ast.Call) and
-                            isinstance(decorator.func, ast.Attribute) and
-                            decorator.func.attr in (
-                                'get', 'post', 'put', 'delete', 'patch')):
-                        has_response_model = any(
-                            kw.arg == 'response_model'
-                            for kw in decorator.keywords
-                        )
-                        if not has_response_model:
-                            diagnostics.append({
-                                'type': 'WARN',
-                                'rule': 'fastapi/missing-response-model',
-                                'location': f'{rel_path}:{node.lineno}',
-                                'description': 'Route missing response_model — leaks internal fields',
-                            })
-
-            # structlog/print-instead-of-log
-            if not skip_print:
-                if (isinstance(node, ast.Call) and
-                        isinstance(node.func, ast.Name) and
-                        node.func.id == 'print'):
-                    diagnostics.append({
-                        'type': 'WARN',
-                        'rule': 'structlog/print-instead-of-log',
-                        'location': f'{rel_path}:{node.lineno}',
-                        'description': 'Use structlog logger instead of print()',
-                    })
-
-            # fastapi/hardcoded-secret
-            if isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(target, ast.Name):
-                        name_upper = target.id.upper()
-                        if any(kw in name_upper for kw in (
-                            'SECRET', 'PASSWORD', 'TOKEN',
-                            'API_KEY', 'PRIVATE_KEY',
-                        )):
-                            if (isinstance(node.value, ast.Constant) and
-                                    isinstance(node.value.value, str)):
-                                diagnostics.append({
-                                    'type': 'ERR',
-                                    'rule': 'fastapi/hardcoded-secret',
-                                    'location': f'{rel_path}:{node.lineno}',
-                                    'description': f'Hardcoded secret in {target.id} — use env var',
-                                })
-
+                    
         return diagnostics

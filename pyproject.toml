@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "py-doctor"
-version = "1.0.0"
+version = "1.0.1"
 description = "Diagnose and fix your FastAPI project health"
 readme = "README.md"
 requires-python = ">=3.11"

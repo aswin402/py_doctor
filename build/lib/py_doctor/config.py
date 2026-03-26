@@ -1,9 +1,7 @@
 import json
 import os
-
-
 import sys
-from typing import Optional
+from typing import Optional, List
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -40,26 +38,52 @@ class Config:
         self.ignore_files = ignore_files or []
 
     @classmethod
-    def load(cls, project_path: str) -> 'Config':
-        # try py_doctor.config.json first
+    def load(cls, project_path: str, config_file: Optional[str] = None) -> 'Config':
+        """Load configuration from file"""
+        
+        # If specific config file provided, try to load it
+        if config_file:
+            if os.path.exists(config_file):
+                return cls._load_from_file(config_file)
+            else:
+                print(f"Warning: Config file not found: {config_file}", file=sys.stderr)
+        
+        # Try py_doctor.config.json first
         json_path = os.path.join(project_path, 'py_doctor.config.json')
         if os.path.exists(json_path):
-            with open(json_path) as f:
+            return cls._load_from_file(json_path)
+
+        # Try pyproject.toml [tool.py_doctor]
+        toml_path = os.path.join(project_path, 'pyproject.toml')
+        if os.path.exists(toml_path) and tomllib:
+            return cls._load_from_toml(toml_path)
+
+        return cls()
+    
+    @classmethod
+    def _load_from_file(cls, filepath: str) -> 'Config':
+        """Load config from JSON file"""
+        try:
+            with open(filepath) as f:
                 data = json.load(f)
             ignore = data.get('ignore', {})
             return cls(
                 lint=data.get('lint', True),
-                dead_code=data.get('deadCode', True),
+                dead_code=data.get('deadCode', data.get('dead_code', True)),
                 types=data.get('types', True),
                 security=data.get('security', True),
                 ignore_rules=ignore.get('rules', []),
                 ignore_files=ignore.get('files', []),
             )
-
-        # try pyproject.toml [tool.py_doctor]
-        toml_path = os.path.join(project_path, 'pyproject.toml')
-        if os.path.exists(toml_path) and tomllib:
-            with open(toml_path, 'rb') as f:
+        except Exception as e:
+            print(f"Warning: Could not load config from {filepath}: {e}", file=sys.stderr)
+            return cls()
+    
+    @classmethod
+    def _load_from_toml(cls, filepath: str) -> 'Config':
+        """Load config from TOML file"""
+        try:
+            with open(filepath, 'rb') as f:
                 data = tomllib.load(f)
             cfg = data.get('tool', {}).get('py_doctor', {})
             if cfg:
@@ -72,5 +96,6 @@ class Config:
                     ignore_rules=ignore.get('rules', []),
                     ignore_files=ignore.get('files', []),
                 )
-
+        except Exception as e:
+            print(f"Warning: Could not load config from {filepath}: {e}", file=sys.stderr)
         return cls()

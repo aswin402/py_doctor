@@ -1,6 +1,7 @@
 import os
 import ast
 from pathlib import Path
+from typing import Set, List, Dict
 
 
 class DeadCodeRunner:
@@ -14,6 +15,8 @@ class DeadCodeRunner:
         diagnostics.extend(unused_files)
         duplicates = await self._find_duplicates()
         diagnostics.extend(duplicates)
+        unused_imports = await self._find_unused_imports()
+        diagnostics.extend(unused_imports)
         return diagnostics
 
     async def _find_unused_files(self) -> list[dict]:
@@ -35,31 +38,16 @@ class DeadCodeRunner:
                     py_files.append(os.path.join(root, f))
 
         all_imported_names = set()
+        import_structures = {}  # Store import relationships
 
         for filepath in py_files:
             try:
                 with open(filepath, 'r', encoding='utf-8') as f:
                     source: str = f.read()
                 tree = ast.parse(source)
-                for node in ast.walk(tree):
-                    if isinstance(node, ast.Import):
-                        for alias in node.names:
-                            name = alias.name
-                            all_imported_names.add(name)
-                            parts = name.split('.')
-                            for i in range(1, len(parts) + 1):
-                                all_imported_names.add('.'.join(parts[:i]))
-                    elif isinstance(node, ast.ImportFrom):
-                        if node.module:
-                            all_imported_names.add(node.module)
-                            parts = node.module.split('.')
-                            for i in range(1, len(parts) + 1):
-                                all_imported_names.add('.'.join(parts[:i]))
-                            path_version = node.module.replace('.', os.sep)
-                            all_imported_names.add(path_version)
-                            all_imported_names.add(parts[-1])
-                        for alias in node.names:
-                            all_imported_names.add(alias.name)
+                imports = self._extract_imports(tree)
+                all_imported_names.update(imports)
+                import_structures[filepath] = imports
             except Exception:
                 continue
 
@@ -70,27 +58,37 @@ class DeadCodeRunner:
             if basename in (
                 'main.py', 'app.py', 'wsgi.py', 'asgi.py',
                 'settings.py', 'config.py', 'conftest.py',
-                'celery.py', 'worker.py', 'cli.py',
+                'celery.py', 'worker.py', 'cli.py', '__init__.py'
             ):
                 continue
 
             if any(ig.rstrip('/') in rel for ig in self.ignore_files):
                 continue
 
-            stem = Path(filepath).stem
-            rel_no_ext = rel.replace(os.sep, '.').replace('.py', '')
-            rel_as_path = rel.replace('.py', '')
-
-            possible = {stem, rel_no_ext, rel_as_path}
-            parts = rel_no_ext.split('.')
-            for i in range(len(parts)):
-                possible.add('.'.join(parts[i:]))
-            path_parts = rel_as_path.split(os.sep)
-            for i in range(len(path_parts)):
-                possible.add(os.sep.join(path_parts[i:]))
-                possible.add('.'.join(path_parts[i:]))
-
-            is_imported = bool(possible & all_imported_names)
+            # Check if file is imported
+            module_name = Path(filepath).stem
+            module_path = rel.replace(os.sep, '.').replace('.py', '')
+            module_path_parts = module_path.split('.')
+            
+            is_imported = False
+            
+            # Check various import patterns
+            for imported in all_imported_names:
+                # Direct import
+                if imported == module_name or imported == module_path:
+                    is_imported = True
+                    break
+                
+                # Import from module
+                if '.' in imported:
+                    if imported.split('.')[0] == module_name:
+                        is_imported = True
+                        break
+                
+                # Check for relative imports
+                if module_path_parts and module_path_parts[-1] in imported:
+                    is_imported = True
+                    break
 
             if not is_imported:
                 diagnostics.append({
@@ -101,6 +99,27 @@ class DeadCodeRunner:
 
         return diagnostics
 
+    def _extract_imports(self, tree: ast.AST) -> Set[str]:
+        imports = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    name = alias.name
+                    imports.add(name)
+                    # Add the base module name as well
+                    if '.' in name:
+                        imports.add(name.split('.')[0])
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    imports.add(node.module)
+                    # Add the base module name
+                    if '.' in node.module:
+                        imports.add(node.module.split('.')[0])
+                for alias in node.names:
+                    if alias.name != '*':
+                        imports.add(alias.name)
+        return imports
+
     async def _find_duplicates(self) -> list[dict]:
         diagnostics = []
         skip_dirs = {
@@ -109,20 +128,87 @@ class DeadCodeRunner:
             'build', 'dist', 'eggs', '.eggs', 'py_doctor.egg-info',
         }
         by_name: dict[str, list[str]] = {}
+        
         for root, dirs, files in os.walk(self.project_path):
             dirs[:] = [d for d in dirs
                        if not d.startswith('.')
                        and d not in skip_dirs]
             for f in files:
-                if f.endswith('.py') and f != '__init__.py':
+                if f.endswith('.py'):
                     filepath = os.path.join(root, f)
-                    by_name.setdefault(f, []).append(
-                        os.path.relpath(filepath, self.project_path))
-        for paths in by_name.values():
+                    rel_path = os.path.relpath(filepath, self.project_path)
+                    by_name.setdefault(f, []).append(rel_path)
+                    
+        for name, paths in by_name.items():
             if len(paths) > 1:
                 diagnostics.append({
                     'type': 'DEAD',
                     'subType': 'DUPLICATE',
-                    'description': ' ≈ '.join(paths),
+                    'description': f'{name}: {" ≈ ".join(paths)}',
                 })
         return diagnostics
+
+    async def _find_unused_imports(self) -> list[dict]:
+        """Find unused imports in Python files"""
+        diagnostics = []
+        skip_dirs = {
+            'venv', 'env', '__pycache__', '.venv', 'node_modules',
+            'migrations', 'alembic', 'tests', 'test',
+            'build', 'dist', 'eggs', '.eggs', 'py_doctor.egg-info',
+        }
+        
+        for root, dirs, files in os.walk(self.project_path):
+            dirs[:] = [d for d in dirs
+                       if not d.startswith('.')
+                       and d not in skip_dirs]
+            for filename in files:
+                if not filename.endswith('.py'):
+                    continue
+                    
+                filepath = os.path.join(root, filename)
+                rel_path = os.path.relpath(filepath, self.project_path)
+                
+                try:
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        source = f.read()
+                    
+                    tree = ast.parse(source)
+                    imports = self._get_imports(tree)
+                    used_names = self._get_used_names(tree)
+                    
+                    for import_name, import_line in imports:
+                        # Check if the imported name is used
+                        if import_name not in used_names:
+                            diagnostics.append({
+                                'type': 'DEAD',
+                                'subType': 'UNUSED IMPORT',
+                                'description': f'{rel_path}:{import_line} — import {import_name} not used',
+                            })
+                            
+                except Exception:
+                    continue
+                    
+        return diagnostics
+
+    def _get_imports(self, tree: ast.AST) -> List[tuple[str, int]]:
+        """Extract all imported names with line numbers"""
+        imports = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    imports.append((alias.name.split('.')[0], node.lineno))
+            elif isinstance(node, ast.ImportFrom):
+                for alias in node.names:
+                    if alias.name != '*':
+                        imports.append((alias.name, node.lineno))
+        return imports
+
+    def _get_used_names(self, tree: ast.AST) -> Set[str]:
+        """Extract all names used in the file"""
+        used_names = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                used_names.add(node.id)
+            elif isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
+                used_names.add(node.attr)
+        return used_names
