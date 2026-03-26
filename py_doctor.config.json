@@ -1,0 +1,23 @@
+{
+  "lint": true,
+  "deadCode": true,
+  "types": true,
+  "security": true,
+  "ignore": {
+    "rules": [
+      "bandit/B404",
+      "bandit/B603",
+      "ruff/E501"
+    ],
+    "files": [
+      "tests/",
+      "migrations/",
+      "alembic/"
+    ]
+  },
+  "severityMapping": {
+    "fastapi/missing-response-model": "WARN",
+    "sqlalchemy/missing-index": "INFO"
+  },
+  "customRules": []
+}

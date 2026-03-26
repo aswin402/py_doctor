@@ -1,33 +1,61 @@
-[build-system]
-requires = ["setuptools>=68.0", "wheel", "setuptools_scm[toml]>=7"]
-build-backend = "setuptools.build_meta"
-
 [project]
-name = "py-doctor"
-version = "1.0.1"
-description = "Diagnose and fix your FastAPI project health"
+name = "py_doctor"
+version = "2.0.0"
+description = "Comprehensive FastAPI project health checker"
+authors = [{name = "aswin"}]
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.9"
+license = {text = "MIT"}
 dependencies = [
-    "ruff>=0.3.0",
-    "mypy>=1.8.0",
-    "bandit>=1.7.7",
-    "vulture>=2.11",
-    "rich>=13.7.0",
-    "typer>=0.12.0",
-    "tomli>=2.0.1",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+    "bandit>=1.7.0",
 ]
 
 [project.scripts]
 py_doctor = "py_doctor.cli:main"
 
-[tool.uv]
-dev-dependencies = [
-    "ruff>=0.3.0",
-    "mypy>=1.8.0",
-    "bandit>=1.7.7",
-]
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-where = ["."]
 include = ["py_doctor*"]
+exclude = ["tests*", "docs*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.bandit]
+exclude_dirs = ["tests", "docs", ".venv", "venv"]
+skips = ["B101", "B307"]
+
+dependencies = [
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+    "vulture>=2.3",
+    "pip-audit>=2.7.0",
+    "rich>=13.0.0"
+]
+
+[tool.py_doctor]
+lint = true
+dead_code = true
+types = true
+security = true
+threshold = 75
+
+[tool.py_doctor.ignore]
+rules = ["bandit/B404", "bandit/B603"]
+files = ["tests/", "docs/"]

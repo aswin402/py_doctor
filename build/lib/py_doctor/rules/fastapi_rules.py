@@ -1,158 +1,117 @@
 import ast
+from typing import Any
+
+from py_doctor.constants import SECRET_PATTERNS
 from .base_rule import BaseRule
 
 
 class MissingResponseModelRule(BaseRule):
-    rule_id = 'fastapi/missing-response-model'
-    severity = 'WARN'
+    rule_id = "fastapi/missing-response-model"
+    severity = "WARN"
+    description = "Route missing response_model - leaks internal fields and breaks API contract"
 
     @classmethod
-    def check(cls, tree: ast.Module, source: str, rel_path: str) -> list[dict]:
-        diagnostics = []
+    def check(cls, tree: ast.Module, source: str, rel_path: str) -> list[dict[str, Any]]:
+        diagnostics: list[dict[str, Any]] = []
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 for decorator in node.decorator_list:
-                    if (isinstance(decorator, ast.Call) and
-                        isinstance(decorator.func, ast.Attribute) and
-                        decorator.func.attr in ('get', 'post', 'put', 'delete', 'patch', 'api_route')):
-                        has_response_model = any(
-                            kw.arg == 'response_model' for kw in decorator.keywords
+                    if cls._is_route_decorator(decorator) and not cls._has_response_model(
+                        decorator
+                    ):
+                        diagnostics.append(
+                            {
+                                "type": cls.severity,
+                                "rule": cls.rule_id,
+                                "location": f"{rel_path}:{node.lineno}",
+                                "description": cls.description,
+                                "suggestion": "Add response_model=YourResponseModel to decorator",
+                            }
                         )
-                        if not has_response_model:
-                            diagnostics.append({
-                                'type': cls.severity,
-                                'rule': cls.rule_id,
-                                'location': f'{rel_path}:{node.lineno}',
-                                'description': 'Route missing response_model — leaks internal fields and breaks API contract',
-                            })
         return diagnostics
+
+    @staticmethod
+    def _is_route_decorator(decorator: ast.AST) -> bool:
+        return (
+            isinstance(decorator, ast.Call)
+            and isinstance(decorator.func, ast.Attribute)
+            and decorator.func.attr in ("get", "post", "put", "delete", "patch", "api_route")
+        )
+
+    @staticmethod
+    def _has_response_model(decorator: ast.AST) -> bool:
+        if not isinstance(decorator, ast.Call):
+            return False
+        return any(kw.arg == "response_model" for kw in decorator.keywords)
 
 
 class SyncInAsyncRouteRule(BaseRule):
-    rule_id = 'fastapi/sync-in-async-route'
-    severity = 'ERR'
+    rule_id = "fastapi/sync-in-async-route"
+    severity = "ERR"
+    description = "Blocking call in async route blocks the entire event loop"
 
     @classmethod
-    def check(cls, tree: ast.Module, source: str, rel_path: str) -> list[dict]:
-        diagnostics = []
+    def check(cls, tree: ast.Module, source: str, rel_path: str) -> list[dict[str, Any]]:
+        diagnostics: list[dict[str, Any]] = []
         for node in ast.walk(tree):
             if isinstance(node, ast.AsyncFunctionDef):
-                # Check for blocking calls in async functions
                 for child in ast.walk(node):
-                    # time.sleep()
-                    if (isinstance(child, ast.Call) and
-                        isinstance(child.func, ast.Attribute) and
-                        child.func.attr == 'sleep' and
-                        isinstance(child.func.value, ast.Name) and
-                        child.func.value.id == 'time'):
-                        diagnostics.append({
-                            'type': cls.severity,
-                            'rule': cls.rule_id,
-                            'location': f'{rel_path}:{child.lineno}',
-                            'description': 'time.sleep() blocks event loop — use await asyncio.sleep()',
-                        })
-                    
-                    # Synchronous database calls
-                    elif (isinstance(child, ast.Call) and
-                          isinstance(child.func, ast.Attribute) and
-                          'execute' in child.func.attr and
-                          not isinstance(child.func.value, ast.Await)):
-                        # Check if this is a SQLAlchemy sync call in async function
-                        for parent in ast.walk(node):
-                            if (isinstance(parent, ast.Assign) and
-                                isinstance(parent.value, ast.Call)):
-                                # Heuristic: likely sync SQLAlchemy call
-                                diagnostics.append({
-                                    'type': cls.severity,
-                                    'rule': cls.rule_id,
-                                    'location': f'{rel_path}:{child.lineno}',
-                                    'description': f'Potential blocking call {child.func.attr}() in async route — use async version',
-                                })
+                    if cls._is_time_sleep(child):
+                        diagnostics.append(
+                            {
+                                "type": cls.severity,
+                                "rule": cls.rule_id,
+                                "location": f"{rel_path}:{getattr(child, 'lineno', 1)}",
+                                "description": cls.description,
+                                "suggestion": "Replace time.sleep() with await asyncio.sleep()",
+                            }
+                        )
         return diagnostics
+
+    @staticmethod
+    def _is_time_sleep(node: ast.AST) -> bool:
+        return (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "sleep"
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "time"
+        )
 
 
 class HardcodedSecretRule(BaseRule):
-    rule_id = 'fastapi/hardcoded-secret'
-    severity = 'ERR'
+    rule_id = "fastapi/hardcoded-secret"
+    severity = "ERR"
+    description = "Hardcoded secret in source code - security risk"
 
     @classmethod
-    def check(cls, tree: ast.Module, source: str, rel_path: str) -> list[dict]:
-        diagnostics = []
-        secret_patterns = [
-            'SECRET', 'PASSWORD', 'TOKEN', 'API_KEY', 
-            'PRIVATE_KEY', 'JWT_SECRET', 'SALT', 'KEY'
-        ]
-        
+    def check(cls, tree: ast.Module, source: str, rel_path: str) -> list[dict[str, Any]]:
+        diagnostics: list[dict[str, Any]] = []
         for node in ast.walk(tree):
             if isinstance(node, ast.Assign):
                 for target in node.targets:
                     if isinstance(target, ast.Name):
                         name_upper = target.id.upper()
-                        if any(pattern in name_upper for pattern in secret_patterns):
-                            # Check if value is a string literal
-                            if (isinstance(node.value, ast.Constant) and
-                                    isinstance(node.value.value, str) and
-                                    node.value.value and
-                                    not node.value.value.startswith('${')):
-                                
-                                # Skip if it's an environment variable reference
-                                if node.value.value.startswith('os.environ') or '$' in node.value.value:
-                                    continue
-                                    
-                                diagnostics.append({
-                                    'type': cls.severity,
-                                    'rule': cls.rule_id,
-                                    'location': f'{rel_path}:{node.lineno}',
-                                    'description': f'Hardcoded secret in {target.id} — use env var or secrets manager',
-                                })
+                        if any(
+                            pattern in name_upper for pattern in SECRET_PATTERNS
+                        ) and cls._is_string_literal(node.value):
+                            diagnostics.append(
+                                {
+                                    "type": cls.severity,
+                                    "rule": cls.rule_id,
+                                    "location": f"{rel_path}:{getattr(node, 'lineno', 1)}",
+                                    "description": cls.description,
+                                    "suggestion": f"Move {target.id} to environment variable using pydantic-settings",
+                                }
+                            )
         return diagnostics
 
-
-class MissingStatusCodeRule(BaseRule):
-    rule_id = 'fastapi/missing-status-code'
-    severity = 'WARN'
-
-    @classmethod
-    def check(cls, tree: ast.Module, source: str, rel_path: str) -> list[dict]:
-        diagnostics = []
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                for decorator in node.decorator_list:
-                    if (isinstance(decorator, ast.Call) and
-                        isinstance(decorator.func, ast.Attribute) and
-                        decorator.func.attr in ('post', 'put', 'delete', 'patch')):
-                        has_status_code = any(
-                            kw.arg == 'status_code' for kw in decorator.keywords
-                        )
-                        if not has_status_code:
-                            diagnostics.append({
-                                'type': cls.severity,
-                                'rule': cls.rule_id,
-                                'location': f'{rel_path}:{node.lineno}',
-                                'description': 'Route missing status_code — use appropriate HTTP status codes',
-                            })
-        return diagnostics
-
-
-class MissingDependencyInjectionRule(BaseRule):
-    rule_id = 'fastapi/missing-di'
-    severity = 'WARN'
-
-    @classmethod
-    def check(cls, tree: ast.Module, source: str, rel_path: str) -> list[dict]:
-        diagnostics = []
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                # Check for direct database instantiation
-                for child in ast.walk(node):
-                    if (isinstance(child, ast.Assign) and
-                        isinstance(child.value, ast.Call) and
-                        isinstance(child.value.func, ast.Name) and
-                        child.value.func.id in ('Session', 'sessionmaker')):
-                        diagnostics.append({
-                            'type': cls.severity,
-                            'rule': cls.rule_id,
-                            'location': f'{rel_path}:{child.lineno}',
-                            'description': 'Direct database session creation in route — use FastAPI dependency injection',
-                        })
-        return diagnostics
+    @staticmethod
+    def _is_string_literal(node: ast.AST) -> bool:
+        return (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and bool(node.value)
+            and not node.value.startswith("${")
+            and "os.environ" not in node.value
+        )

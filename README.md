@@ -2,29 +2,32 @@
 
 Diagnose and fix your FastAPI project health — Python equivalent of [flutter_doctor](https://github.com/millionco/react-doctor).
 
-One command scans your codebase for errors, warnings, dead code, and security issues, then outputs a **0–100 health score** with a rich terminal UI and generates a `NEEDEDFIX.md` file you can paste directly into any AI agent to auto-fix all issues.
-```
+One command scans your codebase for errors, warnings, dead code, and vulnerable dependencies, then outputs a **0–100 health score** with a beautiful `rich` terminal UI and generates a `NEEDEDFIX.md` file you can paste directly into any AI agent to auto-fix all issues.
+
+```bash
 py_doctor . --verbose
 ```
-```
+
+```text
   ❯ py_doctor . --verbose
 
   Detecting project...
   ✓ Python 3.12.3 · FastAPI 0.110.0 · SQLAlchemy 2.0.25
   ✓ Alembic detected · structlog detected · 34 source files
 
-  Running analysis passes in parallel...
   ✓ Analysis complete
 
   ────────────────────────────────────────────────────────────────────────────
 
-  LINT DIAGNOSTICS
+  ERRORS (2)
 
    ERR   fastapi/missing-await          app/routes/users.py:42
          db.execute() called without await — returns coroutine not result
 
    ERR   fastapi/hardcoded-secret       app/core/config.py:7
          SECRET_KEY hardcoded in source — use env var
+
+  WARNINGS (2)
 
    WARN  fastapi/missing-response-model app/routes/users.py:15
          Route missing response_model — leaks internal fields
@@ -36,16 +39,16 @@ py_doctor . --verbose
 
   DEAD CODE
 
-   DEAD  UNUSED FILE    app/utils/legacy_auth.py
-   DEAD  DUPLICATE      app/utils/helpers.py ≈ app/core/utils.py
+   DEAD  UNUSED           app/utils/legacy_auth.py:12
+         unused function 'legacy_login' (60% confidence)
 
   ────────────────────────────────────────────────────────────────────────────
 
   ╭───────────────────────────────────────────────────────────────────────────╮
   │                                                                           │
   │  71        HEALTH SCORE                                                   │
-  │            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━──────────────────    │
-  │  Needs work  2 errors  4 warnings  2 dead code  34 files scanned          │
+  │            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━──────────────────     │
+  │  Needs work  2 errors  2 warnings  1 dead code  34 files scanned          │
   │                                                                           │
   ╰───────────────────────────────────────────────────────────────────────────╯
 
@@ -62,35 +65,31 @@ py_doctor . --verbose
 
 ## What it checks
 
-### Errors (weight ×3)
-| Rule | Description |
-|------|-------------|
-| `fastapi/missing-await` | async db call without await — returns coroutine |
-| `fastapi/sync-in-async-route` | `time.sleep()` inside async route — blocks event loop |
-| `fastapi/hardcoded-secret` | SECRET/PASSWORD/TOKEN hardcoded in source |
-| `ruff/F8xx` | Undefined names, unused variables, syntax errors |
-| `ruff/E9xx` | Syntax errors that prevent the file running |
-| `mypy/type-error` | Type mismatches that cause runtime crashes |
+### 🚨 Errors & Security
+| Engine | Description |
+|--------|-------------|
+| **FastAPI AST** | Missing `await` on DB calls, blocking I/O in async routes, hardcoded secrets. |
+| **SQLAlchemy AST** | Missing session closures (connection leaks), sync queries in async functions. |
+| **Ruff (`E`, `F`, `S`, `B`)** | Syntax errors, undefined names, likely bugs, and static security vulnerabilities (via built-in `flake8-bandit`). |
+| **mypy** | Type mismatches that cause runtime `TypeError` or `AttributeError` crashes. |
+| **pip-audit** | Scans `requirements.txt` / `pyproject.toml` against the PyPA advisory database for packages with known CVEs. |
 
-### Warnings (weight ×1)
-| Rule | Description |
-|------|-------------|
-| `fastapi/missing-response-model` | Route leaks internal fields |
-| `fastapi/missing-status-code` | POST route missing `status_code=201` |
-| `structlog/print-instead-of-log` | `print()` used instead of structlog logger |
-| `ruff/F401` | Unused imports |
-| `bandit/B101` | Security issues |
-| `mypy/*` | Type warnings |
+### ⚠️ Warnings & Improvements
+| Engine | Description |
+|--------|-------------|
+| **FastAPI AST** | Routes missing `response_model` (leaks internal data), missing status codes. |
+| **Pydantic AST** | Unsafe default fields, missing validators for sensitive fields like email. |
+| **Ruff (`W`, `UP`, `SIM`, `RUF`)** | Outdated Python syntax, code simplifications, unused imports, and style warnings. |
 
-### Dead code
-- Unused `.py` files (not imported anywhere)
-- Duplicate files (same filename in different directories)
+### 💀 Dead Code (via Vulture)
+Finds unused functions, classes, variables, and unreachable code with high confidence to help you trim bundle size and cognitive load.
 
 ---
 
 ## Scoring
+The health score starts at `100` and deducts points based on severity:
 ```
-score = max(0, min(100, 100 - (errors × 3) - warnings - dead_code))
+score = 100 - (errors × 3) - (warnings × 1) - (dead_code × 1) - (critical × 10) - (dependencies × 15)
 ```
 
 | Score | Label | CI exit code |
@@ -105,132 +104,121 @@ score = max(0, min(100, 100 - (errors × 3) - warnings - dead_code))
 
 ### Recommended — clone and install (no venv needed)
 ```bash
-git clone https://github.com/yourname/py_doctor
+git clone [https://github.com/yourname/py_doctor](https://github.com/yourname/py_doctor)
 cd py_doctor
 ./tool/activate.sh
 ```
 
-This installs `py_doctor` globally via `uv tool` and symlinks it to
-`/usr/local/bin/py_doctor` so it works from any directory instantly.
+This installs `py_doctor` globally via `uv tool` and symlinks it to `/usr/local/bin/py_doctor` so it works from any directory instantly.
 
 ### Requirements
-- Python 3.11+
+- Python 3.9+
 - [uv](https://docs.astral.sh/uv/) (installed automatically by `activate.sh` if missing)
-
-### Update after new features
-```bash
-cd py_doctor
-./tool/update.sh
-```
 
 ---
 
 ## Usage
 ```bash
 py_doctor .                        # scan current directory
+py_doctor . --fix                  # auto-fix safe formatting/linting errors first
 py_doctor . --verbose              # show description per rule
 py_doctor . --score                # print score only (for CI)
-py_doctor . --no-lint              # skip lint pass
-py_doctor . --no-dead-code         # skip dead code detection
-py_doctor . --no-types             # skip mypy type checking
-py_doctor . --no-security          # skip bandit security scan
+py_doctor . --no-lint              # skip Ruff lint pass
+py_doctor . --no-dead-code         # skip Vulture dead code detection
+py_doctor . --no-types             # skip Mypy type checking
+py_doctor . --no-security          # skip Pip-audit dependency vulnerability scan
 py_doctor . --no-md                # skip NEEDEDFIX.md generation
-py_doctor . --diff main            # scan only files changed vs branch
-py_doctor . --format=json          # machine readable output
-py_doctor /path/to/project         # scan specific path
-py_doctor --help                   # show all flags
+py_doctor --version                # show version
 ```
 
 ---
 
 ## NEEDEDFIX.md — AI agent workflow
 
-Every scan generates `NEEDEDFIX.md` in your project root with:
+Every scan generates `NEEDEDFIX.md` in your project root containing:
 - Every error with **why it crashes** and **exact code fix**
 - Warnings grouped by rule with **how to fix** instructions
 - Dead code with **action to take**
-- Improvements checklist
 
-Paste it to any AI agent:
-```
+Paste the contents directly to Cursor, GitHub Copilot, or any AI agent:
+```text
 Read NEEDEDFIX.md and fix all issues in order.
 Fix errors first, then warnings, then dead code.
 ```
 
-Add to your `.gitignore`:
-```
-NEEDEDFIX.md
-```
+*(Add `NEEDEDFIX.md` to your `.gitignore`)*
 
 ---
 
 ## Config
 
-Create `py_doctor.config.json` in your project root:
+Create `py_doctor.config.json` in your project root to override defaults:
 ```json
 {
   "lint": true,
   "deadCode": true,
   "types": true,
   "security": true,
+  "threshold": 80,
   "ignore": {
     "rules": [
-      "bandit/B404",
-      "bandit/B603",
-      "ruff/E501"
+      "ruff/E501",
+      "audit/CVE-2023-XXXX"
     ],
     "files": [
       "migrations/",
       "tests/",
-      "alembic/",
-      "**/*.pyi"
+      "alembic/"
     ]
   }
 }
 ```
 
-Or in `pyproject.toml`:
+Or configure it inside your existing `pyproject.toml`:
 ```toml
 [tool.py_doctor]
 lint = true
 dead_code = true
 types = true
 security = true
+threshold = 80
 
 [tool.py_doctor.ignore]
-rules = ["bandit/B404", "ruff/E501"]
+rules = ["ruff/E501", "audit/CVE-2023-XXXX"]
 files = ["migrations/", "tests/", "alembic/"]
 ```
-
-`py_doctor.config.json` takes precedence over `pyproject.toml` if both exist.
 
 ---
 
 ## CI/CD — GitHub Actions
+
+Automatically block Pull Requests that degrade your project's health score.
+
+Create `.github/workflows/py_doctor.yml`:
 ```yaml
-name: py_doctor
-on: [pull_request]
+name: py_doctor health check
+
+on:
+  pull_request:
+    branches: [ main ]
 
 jobs:
-  health:
+  analyze:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Install uv
-        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+        uses: astral-sh/setup-uv@v5
 
-      - name: Install py_doctor
+      - name: Install dependencies
         run: |
-          git clone https://github.com/yourname/py_doctor /tmp/py_doctor
-          cd /tmp/py_doctor
-          uv tool install .
-          PYDOC=$(find ~ -name "py_doctor" -type f 2>/dev/null | head -1)
-          sudo ln -sf "$PYDOC" /usr/local/bin/py_doctor
+          uv venv
+          uv pip install .
 
-      - name: Run health check
-        run: py_doctor . --score --no-md
-        # exits with code 1 if score < 75 — fails the PR check
+      - name: Run py_doctor
+        # Exits with code 1 (failing the PR) if score drops below threshold
+        run: uv run py_doctor . --score --no-md
 ```
 
 ---
@@ -241,23 +229,21 @@ py_doctor/
 ├── py_doctor/
 │   ├── __init__.py
 │   ├── cli.py                    # entry point, argparse, orchestration
+│   ├── config.py                 # JSON/TOML config loader
+│   ├── constants.py              # centralized string literals and patterns
+│   ├── reporter.py               # rich terminal UI + NEEDEDFIX.md generation
+│   ├── scorer.py                 # weighted 0–100 score formula
 │   ├── analyzer/
 │   │   ├── project_detector.py   # detect Python/FastAPI versions, file count
-│   │   ├── lint_runner.py        # ruff + custom FastAPI AST rules
-│   │   ├── dead_code_runner.py   # import graph walk, duplicate detection
+│   │   ├── lint_runner.py        # aggressive Ruff + custom FastAPI AST rules
+│   │   ├── dead_code_runner.py   # Vulture integration and output parsing
 │   │   ├── type_runner.py        # mypy JSON output parser
-│   │   └── security_runner.py    # bandit JSON output parser
-│   ├── rules/
-│   │   ├── fastapi_rules.py      # FastAPI-specific rule definitions
-│   │   ├── sqlalchemy_rules.py   # SQLAlchemy async rules
-│   │   ├── pydantic_rules.py     # Pydantic model rules
-│   │   └── structlog_rules.py    # logging rules
-│   ├── reporter.py               # terminal UI + NEEDEDFIX.md generation
-│   ├── scorer.py                 # 0–100 score formula
-│   └── config.py                 # JSON/TOML config loader
-├── tool/
-│   ├── activate.sh               # install globally
-│   └── update.sh                 # reinstall after changes
+│   │   └── dependency_runner.py  # pip-audit vulnerability scanning
+│   └── rules/
+│       ├── fastapi_rules.py      # FastAPI-specific rule definitions
+│       ├── sqlalchemy_rules.py   # SQLAlchemy async rules
+│       ├── pydantic_rules.py     # Pydantic model rules
+│       └── structlog_rules.py    # logging rules
 ├── pyproject.toml
 └── README.md
 ```
@@ -265,7 +251,7 @@ py_doctor/
 ---
 
 ## How it works
-```
+```text
 py_doctor . --verbose
       ↓
 Config.load()          reads py_doctor.config.json or pyproject.toml
@@ -273,34 +259,22 @@ Config.load()          reads py_doctor.config.json or pyproject.toml
 ProjectDetector        detects Python version, FastAPI, SQLAlchemy from pyproject.toml
       ↓
 asyncio.gather()       runs 4 passes in parallel:
-  ├── LintRunner       ruff --format=json + custom AST rules
-  ├── DeadCodeRunner   import graph walk for unused files
+  ├── LintRunner       ruff (E, F, B, S, UP, SIM) + custom AST rules
+  ├── DeadCodeRunner   vulture --min-confidence 70
   ├── TypeRunner       mypy --output=json
-  └── SecurityRunner   bandit -f json
+  └── DependencyRunner pip-audit -f json
       ↓
-Scorer                 100 - (errors×3) - warnings - dead_code
+Scorer                 100 - penalties (errors, critical, vulnerabilities)
       ↓
-Reporter               terminal UI with ANSI colors
+Reporter               renders UI via `rich`
       ↓
-NEEDEDFIX.md           markdown report with fix instructions
+NEEDEDFIX.md           writes markdown report with AI-ready fix instructions
 ```
-
----
-
-## Compared to existing tools
-
-| Feature | ruff | mypy | bandit | py_doctor |
-|---------|------|------|--------|-----------|
-| Health score 0–100 | ✗ | ✗ | ✗ | ✓ |
-| Terminal UI | ✗ | ✗ | ✗ | ✓ |
-| NEEDEDFIX.md for AI | ✗ | ✗ | ✗ | ✓ |
-| FastAPI-specific rules | ✗ | ✗ | ✗ | ✓ |
-| Dead code detection | ✗ | ✗ | ✗ | ✓ |
-| All-in-one command | ✗ | ✗ | ✗ | ✓ |
-| CI exit code | ✓ | ✓ | ✓ | ✓ |
 
 ---
 
 ## License
 
 MIT
+```
+

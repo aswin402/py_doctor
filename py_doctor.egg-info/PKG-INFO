@@ -1,16 +1,14 @@
 Metadata-Version: 2.4
-Name: py-doctor
-Version: 1.0.1
-Summary: Diagnose and fix your FastAPI project health
-Requires-Python: >=3.11
+Name: py_doctor
+Version: 2.0.0
+Summary: Comprehensive FastAPI project health checker
+Author: aswin
+License: MIT
+Requires-Python: >=3.9
 Description-Content-Type: text/markdown
-Requires-Dist: ruff>=0.3.0
-Requires-Dist: mypy>=1.8.0
-Requires-Dist: bandit>=1.7.7
-Requires-Dist: vulture>=2.11
-Requires-Dist: rich>=13.7.0
-Requires-Dist: typer>=0.12.0
-Requires-Dist: tomli>=2.0.1
+Requires-Dist: ruff>=0.1.0
+Requires-Dist: mypy>=1.0.0
+Requires-Dist: bandit>=1.7.0
 
 # py_doctor
 

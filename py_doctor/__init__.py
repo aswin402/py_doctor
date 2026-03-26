@@ -1,12 +1,11 @@
-"""py_doctor - Diagnose FastAPI projects like flutter_doctor."""
 """
-py_doctor - FastAPI project health diagnostic tool
+py_doctor - Advanced FastAPI project health diagnostic tool
 """
 
-__version__ = "1.0.1"
+__version__ = "2.0.0"
 __author__ = "aswin"
-__description__ = "Diagnose and fix your FastAPI project health"
+__description__ = "Comprehensive FastAPI project health checker with advanced error detection"
 
-from py_doctor.cli import main, get_version, __version__
+from py_doctor.cli import get_version, main
 
-__all__ = ['main', 'get_version', '__version__']
+__all__ = ["main", "get_version", "__version__"]
