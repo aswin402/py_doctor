@@ -18,10 +18,10 @@ class Reporter:
     ):
         self._print_command()
         self._print_detection(detector)
-        
+
         self.console.print("[bold green]✓[/bold green] Analysis complete\n")
         self.console.print("[dim]" + "─" * 76 + "[/dim]")
-        
+
         self._print_lint_diagnostics(diagnostics)
         self._print_dead_code_diagnostics(diagnostics)
         self._print_health_score(score, errors, warnings, dead_code, file_count, threshold)
@@ -38,7 +38,7 @@ class Reporter:
             parts.append(f"FastAPI {detector.fastapi_version}")
         if detector.sqlalchemy_version:
             parts.append(f"SQLAlchemy {detector.sqlalchemy_version}")
-            
+
         sep = "[dim] · [/dim]"
         self.console.print(f"  [bold green]✓[/bold green] {sep.join(parts)}")
 
@@ -50,7 +50,7 @@ class Reporter:
         if detector.has_asyncpg:
             extras.append("asyncpg detected")
         extras.append(f"{detector.source_file_count} source files")
-        
+
         self.console.print(f"  [bold green]✓[/bold green] {sep.join(extras)}\n")
 
     def _print_lint_diagnostics(self, diagnostics):
@@ -86,12 +86,12 @@ class Reporter:
         tag = f"[bold white on {color}] {label} [/]"
         rule = f"[cyan]{d['rule']}[/cyan]"
         loc = f"[dim]{d.get('location', '')}[/dim]"
-        
+
         # Calculate padding to right-align the location
         rule_len = len(d['rule'])
         loc_len = len(d.get('location', ''))
         pad = max(2, 76 - 6 - rule_len - loc_len)
-        
+
         self.console.print(f"{tag}  {rule}{' ' * pad}{loc}")
         if self.verbose and d.get("description"):
             self.console.print(f"       [dim]{d['description']}[/dim]")
@@ -108,7 +108,7 @@ class Reporter:
             desc = d.get("description", "")
             tag = "[bold white on blue] DEAD [/]"
             self.console.print(f"{tag}  [dim]{sub}[/dim][magenta]{desc}[/magenta]\n")
-            
+
         self.console.print("[dim]" + "─" * 76 + "[/dim]\n")
 
     def _print_health_score(self, score, errors, warnings, dead_code, file_count, threshold):
@@ -129,7 +129,7 @@ class Reporter:
             f"[bold white]{errors}[/] errors  [bold white]{warnings}[/] warnings  "
             f"[bold white]{dead_code}[/] dead code  [bold white]{file_count}[/] files scanned"
         )
-        
+
         table.add_row(score_text, "[dim]HEALTH SCORE[/dim]")
         table.add_row(bar, "")
         table.add_row(f"[{color}]{label}[/]", stats_text)
@@ -143,8 +143,8 @@ class Reporter:
         errs = [d for d in diagnostics if d["type"] == "ERR"][:5]
         if errs:
             for d in errs:
-                desc = d.get("description", "")[:60]
-                self.console.print(f"[red]→[/red] Fix [cyan]{d['rule']}[/cyan] — {desc}")
+                action = d.get("suggestion") or d.get("description", "")
+                self.console.print(f"[red]→[/red] Fix [cyan]{d['rule']}[/cyan] — {action[:70]}")
         else:
             self.console.print("[bold green]✓ No errors found![/bold green]")
         self.console.print()
@@ -198,13 +198,16 @@ class Reporter:
                 rule = d.get("rule", "")
                 loc = d.get("location", "")
                 desc = d.get("description", "")
+                sugg = d.get("suggestion", "")
                 w(f"### `{rule}`")
                 w(f"- **File:** `{loc}`")
                 w(f"- **Problem:** {desc}")
+                if sugg:
+                    w(f"- **Suggestion:** {sugg}")
                 w("- **How to fix:**")
                 w("")
                 w("  ```python")
-                w(f"  # Fix: {desc}")
+                w(f"  # Fix: {sugg or desc}")
                 w("  ```")
                 w("")
 

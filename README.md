@@ -89,7 +89,7 @@ Finds unused functions, classes, variables, and unreachable code with high confi
 ## Scoring
 The health score starts at `100` and deducts points based on severity:
 ```
-score = 100 - (errors × 3) - (warnings × 1) - (dead_code × 1) - (critical × 10) - (dependencies × 15)
+score = 100 - (errors × 3) - (warnings × 1) - (dead_code × 1) - (critical × 10) - (security × 5) - (dependencies × 15)
 ```
 
 | Score | Label | CI exit code |
@@ -104,7 +104,7 @@ score = 100 - (errors × 3) - (warnings × 1) - (dead_code × 1) - (critical × 
 
 ### Recommended — clone and install (no venv needed)
 ```bash
-git clone [https://github.com/yourname/py_doctor](https://github.com/yourname/py_doctor)
+git clone https://github.com/yourname/py_doctor
 cd py_doctor
 ./tool/activate.sh
 ```
@@ -122,6 +122,7 @@ This installs `py_doctor` globally via `uv tool` and symlinks it to `/usr/local/
 py_doctor .                        # scan current directory
 py_doctor . --fix                  # auto-fix safe formatting/linting errors first
 py_doctor . --verbose              # show description per rule
+py_doctor . --format json          # output structured JSON (for integrations)
 py_doctor . --score                # print score only (for CI)
 py_doctor . --no-lint              # skip Ruff lint pass
 py_doctor . --no-dead-code         # skip Vulture dead code detection

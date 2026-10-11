@@ -61,10 +61,20 @@ class ConnectionLeakRule(BaseRule):
 
     @classmethod
     def check(cls, tree: ast.Module, source: str, rel_path: str) -> list[dict[str, Any]]:
+        if not getattr(tree, "_parent_annotated", False):
+            for parent in ast.walk(tree):
+                for child in ast.iter_child_nodes(parent):
+                    child.parent = parent
+            tree._parent_annotated = True
+
         diagnostics: list[dict[str, Any]] = []
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                acquires = sum(1 for child in ast.walk(node) if cls._is_acquire(child))
+                acquires = sum(
+                    1
+                    for child in ast.walk(node)
+                    if cls._is_acquire(child) and not cls._is_in_context_manager(child)
+                )
                 releases = sum(1 for child in ast.walk(node) if cls._is_release(child))
                 if acquires > releases:
                     diagnostics.append(
@@ -77,6 +87,14 @@ class ConnectionLeakRule(BaseRule):
                         }
                     )
         return diagnostics
+
+    @staticmethod
+    def _is_in_context_manager(node: ast.AST) -> bool:
+        parent = getattr(node, "parent", None)
+        if isinstance(parent, ast.withitem):
+            return True
+        grandparent = getattr(parent, "parent", None)
+        return isinstance(grandparent, (ast.With, ast.AsyncWith))
 
     @staticmethod
     def _is_acquire(node: ast.AST) -> bool:
@@ -151,32 +169,56 @@ class SlowQueryDetectionRule(BaseRule):
 
     @classmethod
     def check(cls, tree: ast.Module, source: str, rel_path: str) -> list[dict[str, Any]]:
+        if not getattr(tree, "_parent_annotated", False):
+            for parent in ast.walk(tree):
+                for child in ast.iter_child_nodes(parent):
+                    child.parent = parent
+            tree._parent_annotated = True
+
         diagnostics: list[dict[str, Any]] = []
         for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Call)
-                and cls._is_select_query(node)
-                and not cls._has_limit(node)
-            ):
-                diagnostics.append(
-                    {
-                        "type": cls.severity,
-                        "rule": cls.rule_id,
-                        "location": f"{rel_path}:{getattr(node, 'lineno', 1)}",
-                        "description": cls.description,
-                        "suggestion": "Add .limit() or pagination to prevent loading all rows",
-                    }
-                )
+            if isinstance(node, ast.Call):
+                parent = getattr(node, "parent", None)
+                # Only check the outermost call in an expression or assignment to avoid duplicate alerts on sub-calls
+                if isinstance(parent, (ast.Attribute, ast.Call)):
+                    continue
+                segment = ast.get_source_segment(source, node)
+                if not segment:
+                    continue
+                if cls._is_select_query(node, segment) and not cls._has_limit(node, segment):
+                    diagnostics.append(
+                        {
+                            "type": cls.severity,
+                            "rule": cls.rule_id,
+                            "location": f"{rel_path}:{getattr(node, 'lineno', 1)}",
+                            "description": cls.description,
+                            "suggestion": "Add .limit() or pagination to prevent loading all rows",
+                        }
+                    )
         return diagnostics
 
     @staticmethod
-    def _is_select_query(node: ast.AST) -> bool:
-        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
-            return False
-        return node.func.attr in ("select", "query", "execute") and "select" in str(node).lower()
+    def _is_select_query(node: ast.AST, segment: str) -> bool:
+        seg_lower = segment.lower()
+        if "query(" in seg_lower or "select(" in seg_lower:
+            return True
+        if (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr in ("all", "fetch", "fetchall")
+        ):
+            val = getattr(node.func, "value", None)
+            if (
+                isinstance(val, ast.Call)
+                and isinstance(getattr(val, "func", None), ast.Attribute)
+                and getattr(val.func, "attr", None) in ("query", "filter", "where")
+            ):
+                return True
+        return False
 
     @staticmethod
-    def _has_limit(node: ast.AST) -> bool:
-        if not isinstance(node, ast.Call):
-            return False
-        return any("limit" in str(kw).lower() for kw in node.keywords)
+    def _has_limit(node: ast.AST, segment: str) -> bool:
+        seg_lower = segment.lower()
+        return any(
+            term in seg_lower
+            for term in (".limit(", "limit=", "offset=", "first()", "one()", "slice(", "paginate")
+        )

@@ -53,6 +53,12 @@ class MissingAsyncQueryRule(BaseRule):
 
     @classmethod
     def check(cls, tree: ast.Module, source: str, rel_path: str) -> list[dict[str, Any]]:
+        if not getattr(tree, "_parent_annotated", False):
+            for parent in ast.walk(tree):
+                for child in ast.iter_child_nodes(parent):
+                    child.parent = parent
+            tree._parent_annotated = True
+
         diagnostics: list[dict[str, Any]] = []
         for node in ast.walk(tree):
             if isinstance(node, ast.AsyncFunctionDef):
@@ -73,7 +79,24 @@ class MissingAsyncQueryRule(BaseRule):
     def _is_sync_query(node: ast.AST) -> bool:
         if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
             return False
-        return node.func.attr in ("execute", "query", "filter", "all", "first")
+        attr = node.func.attr
+        # In SQLAlchemy 2.0 AsyncSession, `await session.execute(...)` is the standard async pattern.
+        # It is only a blocking sync query if execute() is called without await,
+        # or if legacy 1.x Query methods (.query, .filter, .all, .first) are used on db/session.
+        if attr == "execute":
+            parent = getattr(node, "parent", None)
+            return not isinstance(parent, ast.Await)
+        if attr in ("query", "all", "first"):
+            val = getattr(node.func, "value", None)
+            if isinstance(val, ast.Name) and val.id.lower() in ("db", "session", "sync_session"):
+                return True
+            if (
+                isinstance(val, ast.Call)
+                and isinstance(getattr(val, "func", None), ast.Attribute)
+                and getattr(val.func, "attr", None) in ("query", "filter")
+            ):
+                return True
+        return False
 
 
 class NPlusOneQueryRule(BaseRule):

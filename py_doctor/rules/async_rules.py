@@ -11,6 +11,13 @@ class MissingAwaitRule(BaseRule):
 
     @classmethod
     def check(cls, tree: ast.Module, source: str, rel_path: str) -> list[dict[str, Any]]:
+        # Ensure parent annotations exist even if check() is called standalone
+        if not getattr(tree, "_parent_annotated", False):
+            for parent in ast.walk(tree):
+                for child in ast.iter_child_nodes(parent):
+                    child.parent = parent
+            tree._parent_annotated = True
+
         diagnostics: list[dict[str, Any]] = []
         for node in ast.walk(tree):
             if isinstance(node, ast.AsyncFunctionDef):
@@ -29,16 +36,36 @@ class MissingAwaitRule(BaseRule):
 
     @staticmethod
     def _is_awaitable_call(node: ast.AST) -> bool:
-        return (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr in ("execute", "fetch", "save", "create", "get", "post", "put")
-        )
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+            return False
+
+        attr = node.func.attr
+        if attr in ("fetch", "fetchrow", "fetchval", "fetchall", "execute", "executemany"):
+            return True
+
+        # HTTP client or async db session calls
+        if attr in ("get", "post", "put", "delete", "patch"):
+            val = getattr(node.func, "value", None)
+            if isinstance(val, ast.Name):
+                return val.id.lower() in ("client", "session", "async_session", "httpx", "http", "http_client", "db")
+            if isinstance(val, ast.Attribute):
+                return val.attr.lower() in ("client", "session", "async_session", "httpx", "http", "http_client", "db")
+            return False
+
+        return False
 
     @staticmethod
     def _is_awaited(node: ast.AST) -> bool:
         parent = getattr(node, "parent", None)
-        return isinstance(parent, ast.Await)
+        if isinstance(parent, (ast.Await, ast.AsyncWith)):
+            return True
+        if isinstance(parent, ast.Call):
+            func = getattr(parent, "func", None)
+            if isinstance(func, ast.Attribute) and func.attr in ("gather", "create_task", "wait", "shield"):
+                return True
+            if isinstance(func, ast.Name) and func.id in ("create_task", "gather"):
+                return True
+        return False
 
     @staticmethod
     def _get_call_name(node: ast.AST) -> str:

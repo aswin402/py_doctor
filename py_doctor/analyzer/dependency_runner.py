@@ -13,7 +13,7 @@ class DependencyRunner:
         # pip-audit needs a requirements.txt or pyproject.toml to scan accurately
         req_path = os.path.join(self.project_path, "requirements.txt")
         toml_path = os.path.join(self.project_path, "pyproject.toml")
-        
+
         target_args = []
         if os.path.exists(req_path):
             target_args = ["-r", req_path]
@@ -26,10 +26,10 @@ class DependencyRunner:
         for base_cmd in (["uv", "run", "pip-audit"], ["pip-audit"]):
             try:
                 result = subprocess.run(
-                    base_cmd + target_args + ["-f", "json"], 
-                    capture_output=True, 
-                    text=True, 
-                    cwd=self.project_path, 
+                    base_cmd + target_args + ["-f", "json"],
+                    capture_output=True,
+                    text=True,
+                    cwd=self.project_path,
                     timeout=45
                 )
                 if result.stdout.strip():

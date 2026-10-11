@@ -9,10 +9,16 @@ echo "Updating py_doctor..."
 uv tool install . --reinstall
 
 # re-symlink because binary path may change after reinstall
-PYDOC=$(find ~ -name "py_doctor" -type f 2>/dev/null | head -1)
-if [ -n "$PYDOC" ]; then
-    sudo ln -sf "$PYDOC" /usr/local/bin/py_doctor
-    echo "✓ Symlink updated → $PYDOC"
+PYDOC_DIR="$(uv tool dir --bin 2>/dev/null || echo "$HOME/.local/bin")"
+PYDOC="$PYDOC_DIR/py_doctor"
+if [ -f "$PYDOC" ]; then
+    if [ -w /usr/local/bin ]; then
+        ln -sf "$PYDOC" /usr/local/bin/py_doctor
+        echo "✓ Symlink updated → $PYDOC"
+    elif command -v sudo >/dev/null 2>&1; then
+        sudo ln -sf "$PYDOC" /usr/local/bin/py_doctor
+        echo "✓ Symlink updated → $PYDOC"
+    fi
 fi
 
 echo "✓ py_doctor updated successfully"

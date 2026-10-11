@@ -16,14 +16,21 @@ fi
 # install py_doctor globally with uv tool
 uv tool install .
 
-# symlink to /usr/local/bin so it works from any directory
-PYDOC=$(find ~ -name "py_doctor" -type f 2>/dev/null | head -1)
-if [ -n "$PYDOC" ]; then
-    sudo ln -sf "$PYDOC" /usr/local/bin/py_doctor
-    echo "✓ Symlink created: $PYDOC → /usr/local/bin/py_doctor"
+# find binary from uv tool bin directory
+PYDOC_DIR="$(uv tool dir --bin 2>/dev/null || echo "$HOME/.local/bin")"
+PYDOC="$PYDOC_DIR/py_doctor"
+if [ -f "$PYDOC" ]; then
+    if [ -w /usr/local/bin ]; then
+        ln -sf "$PYDOC" /usr/local/bin/py_doctor
+        echo "✓ Symlink created: $PYDOC → /usr/local/bin/py_doctor"
+    elif command -v sudo >/dev/null 2>&1; then
+        sudo ln -sf "$PYDOC" /usr/local/bin/py_doctor
+        echo "✓ Symlink created: $PYDOC → /usr/local/bin/py_doctor"
+    else
+        echo "✓ Installed to $PYDOC (ensure $PYDOC_DIR is in your PATH)"
+    fi
 else
-    echo "Warning: binary not found, adding uv tools to PATH instead"
-    echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+    echo "Warning: binary not found in $PYDOC_DIR, ensure uv tools directory is in PATH"
 fi
 
 echo ""

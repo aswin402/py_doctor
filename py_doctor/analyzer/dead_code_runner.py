@@ -5,6 +5,7 @@ from typing import Any, Optional
 
 from py_doctor.constants import VULTURE_EXCLUDE_DIRS
 
+
 class DeadCodeRunner:
     def __init__(self, project_path: str, ignore_files: list[str]):
         self.project_path: str = project_path
@@ -12,7 +13,7 @@ class DeadCodeRunner:
 
     async def run(self) -> list[dict[str, Any]]:
         result: Optional[subprocess.CompletedProcess] = None
-        
+
         # Vulture will find unused functions, classes, and variables
         cmd_args = [
             self.project_path,
@@ -34,25 +35,25 @@ class DeadCodeRunner:
             return []
 
         diagnostics: list[dict[str, Any]] = []
-        
+
         # Parse Vulture's output format: "file.py:line: message"
         pattern = re.compile(r"^(.*?):(\d+):\s+(.*)$")
-        
+
         for line in result.stdout.splitlines():
             match = pattern.match(line.strip())
             if match:
                 file_path, line_no, message = match.groups()
-                
+
                 # Make path relative
                 try:
                     rel_path = os.path.relpath(file_path, self.project_path)
                 except ValueError:
                     rel_path = file_path
-                
+
                 # Skip user ignored files
                 if any(ig.rstrip("/") in rel_path for ig in self.ignore_files):
                     continue
-                
+
                 sub_type = "UNUSED IMPORT" if "import" in message else "UNUSED"
 
                 diagnostics.append({

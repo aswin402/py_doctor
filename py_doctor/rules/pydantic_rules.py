@@ -21,25 +21,31 @@ class UnsafeFieldRule(BaseRule):
                 )
                 if is_pydantic:
                     for child in node.body:
+                        field_names = []
+                        val = None
                         if isinstance(child, ast.Assign):
-                            for target in child.targets:
-                                if isinstance(target, ast.Name):
-                                    if (
-                                        isinstance(child.value, ast.Constant)
-                                        and isinstance(child.value.value, str)
-                                        and any(
-                                            secret in target.id.upper()
-                                            for secret in SECRET_PATTERNS
-                                        )
-                                    ):
-                                        diagnostics.append(
-                                            {
-                                                "type": cls.severity,
-                                                "rule": cls.rule_id,
-                                                "location": f"{rel_path}:{child.lineno}",
-                                                "description": f"Sensitive field {target.id} with default value — consider using SecretStr",
-                                            }
-                                        )
+                            field_names = [t.id for t in child.targets if isinstance(t, ast.Name)]
+                            val = child.value
+                        elif isinstance(child, ast.AnnAssign) and isinstance(child.target, ast.Name):
+                            field_names = [child.target.id]
+                            val = child.value
+
+                        if (
+                            val
+                            and isinstance(val, ast.Constant)
+                            and isinstance(val.value, str)
+                            and bool(val.value)
+                        ):
+                            for name in field_names:
+                                if any(secret in name.upper() for secret in SECRET_PATTERNS):
+                                    diagnostics.append(
+                                        {
+                                            "type": cls.severity,
+                                            "rule": cls.rule_id,
+                                            "location": f"{rel_path}:{child.lineno}",
+                                            "description": f"Sensitive field {name} with default value — consider using SecretStr",
+                                        }
+                                    )
         return diagnostics
 
 
@@ -57,32 +63,55 @@ class MissingValidatorRule(BaseRule):
                     for base in node.bases
                 )
                 if is_pydantic:
-                    fields = []
+                    # Collect validator decorator targets/names
+                    has_validator = any(
+                        isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+                        and any(
+                            (
+                                isinstance(dec, ast.Name)
+                                and dec.id in ("validator", "field_validator", "model_validator")
+                            )
+                            or (
+                                isinstance(dec, ast.Call)
+                                and isinstance(dec.func, ast.Name)
+                                and dec.func.id in ("validator", "field_validator", "model_validator")
+                            )
+                            for dec in child.decorator_list
+                        )
+                        for child in node.body
+                    )
+
                     for child in node.body:
+                        field_name = ""
+                        is_email_str = False
                         if isinstance(child, ast.Assign):
                             for target in child.targets:
-                                if isinstance(target, ast.Name):
-                                    fields.append(target.id)
+                                if isinstance(target, ast.Name) and "email" in target.id.lower():
+                                    field_name = target.id
+                        elif (
+                            isinstance(child, ast.AnnAssign)
+                            and isinstance(child.target, ast.Name)
+                            and "email" in child.target.id.lower()
+                        ):
+                            field_name = child.target.id
+                            if (
+                                isinstance(child.annotation, ast.Name)
+                                and child.annotation.id == "EmailStr"
+                            ) or (
+                                isinstance(child.annotation, ast.Attribute)
+                                and child.annotation.attr == "EmailStr"
+                            ):
+                                is_email_str = True
 
-                    for field in fields:
-                        if "email" in field.lower():
-                            has_validator = any(
-                                isinstance(child, ast.FunctionDef)
-                                and any(
-                                    isinstance(dec, ast.Name) and dec.id == "validator"
-                                    for dec in child.decorator_list
-                                )
-                                for child in node.body
+                        if field_name and not is_email_str and not has_validator:
+                            diagnostics.append(
+                                {
+                                    "type": cls.severity,
+                                    "rule": cls.rule_id,
+                                    "location": f"{rel_path}:{child.lineno}",
+                                    "description": f"Email field {field_name} without validator — add EmailStr or custom validator",
+                                }
                             )
-                            if not has_validator:
-                                diagnostics.append(
-                                    {
-                                        "type": cls.severity,
-                                        "rule": cls.rule_id,
-                                        "location": f"{rel_path}:{node.lineno}",
-                                        "description": f"Email field {field} without validator — add EmailStr or custom validator",
-                                    }
-                                )
         return diagnostics
 
 

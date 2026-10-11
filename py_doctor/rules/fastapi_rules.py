@@ -2,6 +2,7 @@ import ast
 from typing import Any
 
 from py_doctor.constants import SECRET_PATTERNS
+
 from .base_rule import BaseRule
 
 
@@ -16,8 +17,10 @@ class MissingResponseModelRule(BaseRule):
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 for decorator in node.decorator_list:
-                    if cls._is_route_decorator(decorator) and not cls._has_response_model(
-                        decorator
+                    if (
+                        cls._is_route_decorator(decorator)
+                        and not cls._has_response_model(decorator)
+                        and node.returns is None
                     ):
                         diagnostics.append(
                             {
@@ -25,7 +28,7 @@ class MissingResponseModelRule(BaseRule):
                                 "rule": cls.rule_id,
                                 "location": f"{rel_path}:{node.lineno}",
                                 "description": cls.description,
-                                "suggestion": "Add response_model=YourResponseModel to decorator",
+                                "suggestion": "Add response_model=... or return type annotation (-> ResponseModel)",
                             }
                         )
         return diagnostics
@@ -88,22 +91,30 @@ class HardcodedSecretRule(BaseRule):
     def check(cls, tree: ast.Module, source: str, rel_path: str) -> list[dict[str, Any]]:
         diagnostics: list[dict[str, Any]] = []
         for node in ast.walk(tree):
+            assignments: list[tuple[str, Any, int]] = []
             if isinstance(node, ast.Assign):
                 for target in node.targets:
                     if isinstance(target, ast.Name):
-                        name_upper = target.id.upper()
-                        if any(
-                            pattern in name_upper for pattern in SECRET_PATTERNS
-                        ) and cls._is_string_literal(node.value):
-                            diagnostics.append(
-                                {
-                                    "type": cls.severity,
-                                    "rule": cls.rule_id,
-                                    "location": f"{rel_path}:{getattr(node, 'lineno', 1)}",
-                                    "description": cls.description,
-                                    "suggestion": f"Move {target.id} to environment variable using pydantic-settings",
-                                }
-                            )
+                        assignments.append((target.id, node.value, getattr(node, "lineno", 1)))
+            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                assignments.append((node.target.id, node.value, getattr(node, "lineno", 1)))
+
+            for name, val, lineno in assignments:
+                name_upper = name.upper()
+                if (
+                    any(pattern in name_upper for pattern in SECRET_PATTERNS)
+                    and val is not None
+                    and cls._is_string_literal(val)
+                ):
+                    diagnostics.append(
+                        {
+                            "type": cls.severity,
+                            "rule": cls.rule_id,
+                            "location": f"{rel_path}:{lineno}",
+                            "description": cls.description,
+                            "suggestion": f"Move {name} to environment variable using pydantic-settings",
+                        }
+                    )
         return diagnostics
 
     @staticmethod

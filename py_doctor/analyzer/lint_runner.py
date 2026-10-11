@@ -16,10 +16,17 @@ from py_doctor.rules import (
     structlog_rules,
 )
 
+
 class LintRunner:
-    def __init__(self, project_path: str, ignore_rules: list[str]):
+    def __init__(
+        self,
+        project_path: str,
+        ignore_rules: list[str],
+        ignore_files: Optional[list[str]] = None,
+    ):
         self.project_path: str = project_path
         self.ignore_rules: list[str] = ignore_rules or []
+        self.ignore_files: list[str] = ignore_files or []
         self.custom_rules: list[Any] = []
         self._load_custom_rules()
 
@@ -29,7 +36,7 @@ class LintRunner:
                 for _name, obj in inspect.getmembers(module):
                     if (inspect.isclass(obj) and issubclass(obj, base_rule.BaseRule) and obj is not base_rule.BaseRule and hasattr(obj, "check")):
                         self.custom_rules.append(obj)
-        except Exception as e:
+        except Exception:
             pass
 
     async def run(self) -> list[dict[str, Any]]:
@@ -43,8 +50,11 @@ class LintRunner:
 
     async def _run_ruff(self) -> list[dict[str, Any]]:
         result: Optional[subprocess.CompletedProcess] = None
-        
-        # We tell Ruff to run all the major plugin rules natively
+
+        exclude_dirs = DEFAULT_EXCLUDE_DIRS_STR
+        if self.ignore_files:
+            exclude_dirs = f"{exclude_dirs},{','.join(self.ignore_files)}"
+
         cmd_args = [
             "check",
             self.project_path,
@@ -53,7 +63,7 @@ class LintRunner:
             "--select",
             RUFF_SELECT_FLAGS,
             "--exclude",
-            DEFAULT_EXCLUDE_DIRS_STR,
+            exclude_dirs,
         ]
 
         for base_cmd in (["uv", "run", "ruff"], ["ruff"]):
@@ -123,11 +133,19 @@ class LintRunner:
                 except ValueError:
                     rel_path = filepath
 
+                if any(ig.rstrip("/") in rel_path for ig in self.ignore_files):
+                    continue
+
                 skip_file = filename == "__init__.py"
                 try:
                     with open(filepath, encoding="utf-8") as f:
                         source = f.read()
                     tree = ast.parse(source, filename=filepath)
+
+                    # Annotate parent on AST nodes for rules that rely on tree context
+                    for parent in ast.walk(tree):
+                        for child in ast.iter_child_nodes(parent):
+                            child.parent = parent
 
                     for rule_class in self.custom_rules:
                         if skip_file and "import" in getattr(rule_class, "rule_id", ""):
