@@ -25,7 +25,7 @@
 <br/>
 
 <a href="#-overview">Overview</a> •
-<a href="#-quick-start">Quick Start</a> •
+<a href="#-installation--quick-start-with-uv">Install with uv</a> •
 <a href="#-diagnostic-rules-catalog">Rules Catalog</a> •
 <a href="#-ai-agent-workflow-neededfixmd">AI Workflow</a> •
 <a href="#-cli-reference">CLI Reference</a> •
@@ -123,31 +123,78 @@ Standard linters detect syntax bugs and formatting, but miss runtime pitfalls un
 
 ---
 
-## 🚀 Quick Start
+## 📦 Installation & Quick Start with uv
 
-### 1. Instant Run with `uvx` (No Installation Needed)
-Run directly via Astral's `uvx`:
+Astral's [`uv`](https://docs.astral.sh/uv/) is the fastest way to install and run `py_doctor`. You can run it on demand without installing, install it globally as a standalone CLI tool, or add it to your project.
+
+### 1. Run Instantly with `uvx` (Zero Installation)
+Run `py_doctor` directly on any project without installing anything permanently:
+
 ```bash
 uvx --from git+https://github.com/aswin402/py_doctor.git py_doctor .
 ```
 
-### 2. Global CLI Install (Recommended)
-Install globally as a standalone command using `uv tool`:
+### 2. Global CLI Install with `uv tool` (Recommended)
+Install `py_doctor` globally so the `py_doctor` command is available in your terminal from any directory:
+
+```bash
+uv tool install git+https://github.com/aswin402/py_doctor.git
+```
+
+Now run anywhere:
+```bash
+py_doctor . --verbose
+```
+
+To update to the latest version later:
+```bash
+uv tool upgrade py_doctor
+```
+
+### 3. Add to Your Project with `uv add`
+If your project is managed with `uv`, add `py_doctor` as a development dependency:
+
+```bash
+uv add --dev git+https://github.com/aswin402/py_doctor.git
+```
+
+Then run it inside your project environment:
+```bash
+uv run py_doctor .
+```
+
+### 4. Install in Active Virtual Environment with `uv pip`
+If you are inside an activated virtual environment:
+
+```bash
+uv pip install git+https://github.com/aswin402/py_doctor.git
+```
+
+### 5. Automated Setup Script
+You can also clone the repository and run the automated activation script, which sets up `uv` and links `py_doctor` to your `/usr/local/bin`:
+
 ```bash
 git clone https://github.com/aswin402/py_doctor.git
 cd py_doctor
 ./tool/activate.sh
 ```
-Or via `uv tool install`:
-```bash
-uv tool install git+https://github.com/aswin402/py_doctor.git
-```
 
-### 3. Local Virtual Environment Install
-Install directly into your active project virtualenv:
+---
+
+<details>
+<summary><b>Non-uv alternatives (pip / pipx)</b></summary>
+
 ```bash
+# Global run with pipx:
+pipx run --spec git+https://github.com/aswin402/py_doctor.git py_doctor .
+
+# Global install with pipx:
+pipx install git+https://github.com/aswin402/py_doctor.git
+
+# Traditional pip install into active venv:
 pip install git+https://github.com/aswin402/py_doctor.git
 ```
+</details>
 
 ---
 
