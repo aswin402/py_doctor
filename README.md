@@ -3,17 +3,18 @@
 <a href="https://github.com/aswin402/py_doctor">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/logo-animated.svg">
-    <img src="assets/logo-animated.svg" alt="py_doctor logo" width="130" height="130" />
+    <img src="assets/logo-animated.svg" alt="py_doctor logo" width="96" height="96" />
   </picture>
 </a>
 
-# 🩺 py_doctor
+# py_doctor
 
 <h3>FastAPI Project Health Diagnostic &amp; AI Remediation Engine</h3>
 
-<p><em>The backend health doctor for Python &amp; FastAPI — instant 0–100 health scoring, deep AST diagnostics, and one-click AI prompt generation.</em></p>
+<p><em>The automated health checker for Python &amp; FastAPI — deep AST static analysis, instant 0–100 health scoring, and AI-ready remediation prompts.</em></p>
 
-[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
+[![Release](https://img.shields.io/github/v/release/aswin402/py_doctor?style=flat&color=10B981&label=release)](https://github.com/aswin402/py_doctor/releases)
+[![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat)](LICENSE)
 [![Managed by uv](https://img.shields.io/badge/Managed%20by-uv-DE5FE9?style=flat&logo=uv&logoColor=white)](https://docs.astral.sh/uv/)
@@ -24,12 +25,12 @@
 <br/>
 
 <a href="#-overview">Overview</a> •
-<a href="#-what-it-checks">What It Checks</a> •
+<a href="#-quick-start">Quick Start</a> •
+<a href="#-diagnostic-rules-catalog">Rules Catalog</a> •
 <a href="#-ai-agent-workflow-neededfixmd">AI Workflow</a> •
-<a href="#-installation">Installation</a> •
-<a href="#-usage--cli-options">CLI Options</a> •
+<a href="#-cli-reference">CLI Reference</a> •
 <a href="#-configuration">Configuration</a> •
-<a href="#-cicd--github-actions">CI/CD</a> •
+<a href="#-cicd--github-actions">CI/CD &amp; Pre-commit</a> •
 <a href="#-architecture">Architecture</a>
 
 </div>
@@ -38,9 +39,9 @@
 
 ## ⚡ Overview
 
-**py_doctor** scans your entire FastAPI codebase for silent bugs, un-awaited coroutines, database connection leaks, missing response models, dead code, type mismatches, and vulnerable dependencies in seconds.
+**py_doctor** is an open-source static health diagnostic CLI and automated code doctor tailored specifically for FastAPI backends.
 
-It outputs a clear **0–100 Health Score** in a terminal UI, supports machine-readable **JSON** and **Git diff** scanning for CI/CD, and generates a structured `NEEDEDFIX.md` file designed for immediate handoff to AI coding agents (Cursor, Claude Code, Copilot, Antigravity) to resolve all findings automatically.
+Standard linters detect syntax bugs and formatting, but miss runtime pitfalls unique to FastAPI, SQLAlchemy, and modern asynchronous architectures. `py_doctor` performs deep AST inspection across your codebase to detect silent bugs, unawaited coroutines, database connection leaks, missing response models, and hardcoded secrets—scoring your project from **0 to 100** and exporting a structured `NEEDEDFIX.md` action plan ready for instant AI auto-fixing.
 
 <br/>
 
@@ -52,13 +53,15 @@ It outputs a clear **0–100 Health Score** in a terminal UI, supports machine-r
 
 <details>
 <summary><b>Click to expand raw terminal text output</b></summary>
+
+```text
   ❯ py_doctor . --verbose
 
   Detecting project...
   ✓ Python 3.12.3 · FastAPI 0.110.0 · SQLAlchemy 2.0.25
   ✓ Alembic detected · structlog detected · 34 source files
 
-  ✓ Analysis complete
+  ✓ Analysis complete (0.34s)
 
   ────────────────────────────────────────────────────────────────────────────
 
@@ -68,7 +71,7 @@ It outputs a clear **0–100 Health Score** in a terminal UI, supports machine-r
          db.execute() called without await — returns coroutine not result
 
    ERR   fastapi/hardcoded-secret       app/core/config.py:7
-         SECRET_KEY hardcoded in source — use env var
+         SECRET_KEY hardcoded in source — load from environment
 
   WARNINGS (2)
 
@@ -80,7 +83,7 @@ It outputs a clear **0–100 Health Score** in a terminal UI, supports machine-r
 
   ────────────────────────────────────────────────────────────────────────────
 
-  DEAD CODE
+  DEAD CODE (1)
 
    DEAD  UNUSED           app/utils/legacy_auth.py:12
          unused function 'legacy_login' (60% confidence)
@@ -109,67 +112,207 @@ It outputs a clear **0–100 Health Score** in a terminal UI, supports machine-r
 
 ---
 
+## 🎯 Key Highlights
+
+- **FastAPI-First AST Analysis**: Deep static analysis targeting framework-specific antipatterns that generic linters miss.
+- **Unified 0–100 Health Score**: Transparent weighted score formula designed for pull request gates and automated quality enforcement.
+- **AI-Agent Remediation (`NEEDEDFIX.md`)**: Automatically exports a prioritized task list with exact line numbers, cause explanations, and code fix suggestions for Cursor, Claude Code, Copilot, or Antigravity.
+- **Git Diff Mode (`--diff [REF]`)**: Only scan lines and files modified in the active branch for lightning-fast pre-commit and CI verification.
+- **Concurrent Engine Dispatch**: Parallel execution across Ruff, Mypy, Vulture, Pip-Audit, and custom AST visitors via `asyncio`.
+- **Zero Config Required**: Automatically auto-detects installed framework versions, virtual environments, and project structures.
+
+---
+
+## 🚀 Quick Start
+
+### 1. Instant Run with `uvx` (No Installation Needed)
+Run directly via Astral's `uvx`:
+```bash
+uvx --from git+https://github.com/aswin402/py_doctor.git py_doctor .
+```
+
+### 2. Global CLI Install (Recommended)
+Install globally as a standalone command using `uv tool`:
+```bash
+git clone https://github.com/aswin402/py_doctor.git
+cd py_doctor
+./tool/activate.sh
+```
+Or via `uv tool install`:
+```bash
+uv tool install git+https://github.com/aswin402/py_doctor.git
+```
+
+### 3. Local Virtual Environment Install
+Install directly into your active project virtualenv:
+```bash
+pip install git+https://github.com/aswin402/py_doctor.git
+```
+
+---
+
 ## 🔍 Why py_doctor?
 
-| Dimension | Standard Linters (Ruff / Flake8) | Generic Type Checkers | **py_doctor** |
+| Capability | Generic Linters (Ruff / Flake8) | Type Checkers (Mypy) | **py_doctor** |
 | :--- | :--- | :--- | :--- |
-| **FastAPI Semantics** | Generic Python checks only | Signatures only | Detects un-annotated response models, exposed secrets, async blocking |
-| **Database & ORM Safety** | None | Limited | Uncovers unclosed sessions, connection leaks, slow unbounded queries |
+| **FastAPI Route Semantics** | Syntax & basic formatting only | Signatures only | Identifies route data leakage, missing models, and unawaited operations |
+| **Database & ORM Safety** | None | Limited | Catches connection leaks, unclosed sessions, and unbounded slow queries |
 | **Health Metric** | Binary pass / fail | Binary pass / fail | Single unified **0–100 score** with customizable gating thresholds |
-| **AI Remediation** | Raw console logs | Error lists | Generates prioritized `NEEDEDFIX.md` prompt for LLM coding agents |
-| **Parallel Execution** | Single tool | Single tool | Orchestrates 5 parallel analysis engines via `asyncio` |
+| **AI Remediation Handoff** | Raw console output | Unstructured error dump | Structured `NEEDEDFIX.md` action plan tailored for coding agents |
+| **Multi-Engine Concurrency** | Single tool pass | Single tool pass | Orchestrates 5 static, type, dead-code, and security passes concurrently |
 
 ---
 
-## 🛠️ What It Checks
+## 📚 Diagnostic Rules Catalog
 
-### 1. ⚡ FastAPI & Async AST Engine
-- **Missing Awaits (`fastapi/missing-await`)**: Detects coroutines called without `await` on DB sessions or HTTP clients.
-- **Sync in Async Routes (`fastapi/sync-in-async-route`)**: Detects blocking calls like `time.sleep()` inside asynchronous endpoint handlers.
-- **Hardcoded Secrets (`fastapi/hardcoded-secret`)**: Flags API keys, JWT secrets, and tokens hardcoded into Python source code.
-- **Missing Response Models (`fastapi/missing-response-model`)**: Flags endpoint routes without an explicit `response_model` or return type annotation.
-- **Blocking I/O in Async (`async/blocking-io`)**: Identifies blocking operations executed within async functions.
+### 1. FastAPI & Async AST Rules
 
-### 2. 🗄️ Database & ORM Engine
-- **Missing Async Query (`sqlalchemy/missing-async-query`)**: Catches synchronous query calls (`.all()`, `.first()`, unawaited `.execute()`) executed in async handlers.
-- **Missing Session Close (`sqlalchemy/missing-session-close`)**: Flags database sessions opened without a corresponding `.close()` call.
-- **Connection Leaks (`database/connection-leak`)**: Detects raw pool/engine acquire calls not wrapped in context managers.
-- **Slow Query Detection (`database/slow-query`)**: Warns on unbounded database queries without pagination or `.limit()`.
+#### `fastapi/missing-await`
+- **Severity**: `ERROR` (-3 pts)
+- **Problem**: Calling an asynchronous database operation or async client without `await` returns an un-awaited coroutine object instead of executing the operation.
+```python
+# ❌ Bad: returns a coroutine; query never executes
+result = db.execute(select(User))
 
-### 3. 🛡️ Pydantic & Structured Logging Engine
-- **Unsafe Fields (`pydantic/unsafe-field`)**: Identifies plain string fields used for sensitive data where `SecretStr` should be used.
-- **Missing Validators (`pydantic/missing-validator`)**: Highlights email/URL string fields missing dedicated validators or `EmailStr` typing.
-- **Print Instead of Log (`structlog/print-instead-of-log`)**: Flags raw `print()` statements in application services.
-- **Contextual Logging (`structlog/missing-context`)**: Encourages structured context binding (`logger.bind()`) in parameterized handlers.
-- **Exception Logging (`structlog/missing-exception`)**: Ensures `except` blocks capture stack traces with `logger.exception()`.
+# ✅ Good: coroutine awaited and executed
+result = await db.execute(select(User))
+```
 
-### 4. 🔬 Static Analysis & Security Suite
-- **Ruff (`E`, `F`, `B`, `S`, `UP`, `SIM`)**: Rapid linting, security lint rules (`flake8-bandit`), and modernization.
-- **Mypy**: Static type validation to prevent runtime `TypeError` and `AttributeError` exceptions.
-- **Vulture**: Dead code detection with confidence scoring to eliminate obsolete variables and functions.
-- **Pip-Audit**: Live scanning against the PyPA vulnerability database for packages with known CVEs.
+#### `fastapi/sync-in-async-route`
+- **Severity**: `ERROR` (-3 pts)
+- **Problem**: Blocking synchronous calls (e.g. `time.sleep()`, synchronous `requests.get()`) inside an `async def` handler freeze the entire event loop, blocking all concurrent user requests.
+```python
+# ❌ Bad: blocks the whole ASGI worker
+@app.get("/items")
+async def get_items():
+    time.sleep(2)
+    return {"status": "ok"}
+
+# ✅ Good: non-blocking async execution
+@app.get("/items")
+async def get_items():
+    await asyncio.sleep(2)
+    return {"status": "ok"}
+```
+
+#### `fastapi/hardcoded-secret`
+- **Severity**: `ERROR` (-3 pts)
+- **Problem**: Storing API keys, JWT tokens, or credentials directly in source code risks exposing secrets in version control.
+```python
+# ❌ Bad: hardcoded secret in source
+SECRET_KEY: str = "super-secret-key-12345"
+
+# ✅ Good: loaded securely from environment
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    SECRET_KEY: str
+```
+
+#### `fastapi/missing-response-model`
+- **Severity**: `WARNING` (-1 pt)
+- **Problem**: Endpoints returning raw ORM models without `response_model` or type annotations can accidentally leak sensitive internal database columns (e.g., password hashes, internal IDs).
+```python
+# ❌ Bad: may leak internal model fields
+@app.get("/users/{user_id}")
+async def get_user(user_id: int):
+    return await db_get_user(user_id)
+
+# ✅ Good: explicit response model filtering
+@app.get("/users/{user_id}", response_model=UserPublic)
+async def get_user(user_id: int):
+    return await db_get_user(user_id)
+```
 
 ---
 
-## 📊 Scoring System
+### 2. Database & SQLAlchemy AST Rules
 
-Every project starts with a baseline score of **100**. Penalties are applied progressively based on issue severity and category:
+#### `sqlalchemy/missing-async-query`
+- **Severity**: `ERROR` (-3 pts)
+- **Problem**: Calling legacy synchronous SQLAlchemy 1.x Query methods (`db.query()`, `.all()`) inside async routes triggers blocking socket I/O.
+```python
+# ❌ Bad: blocking synchronous ORM query
+users = db.query(User).filter(User.active == True).all()
+
+# ✅ Good: modern SQLAlchemy 2.0 async execution
+result = await session.execute(select(User).where(User.active == True))
+users = result.scalars().all()
+```
+
+#### `database/connection-leak`
+- **Severity**: `ERROR` (-3 pts)
+- **Problem**: Raw connection acquisition without context management leaks pool connections under load, resulting in pool exhaustion.
+```python
+# ❌ Bad: connection may leak if exception occurs
+conn = await engine.connect()
+await conn.execute(...)
+
+# ✅ Good: connection safely returned to pool automatically
+async with engine.connect() as conn:
+    await conn.execute(...)
+```
+
+#### `database/slow-query`
+- **Severity**: `WARNING` (-1 pt)
+- **Problem**: Executing queries without `.limit()` or pagination on tables that grow over time can lead to memory spikes and database bottlenecks.
+```python
+# ❌ Bad: unbounded full-table scan
+users = await session.scalars(select(User)).all()
+
+# ✅ Good: bounded query with pagination
+users = await session.scalars(select(User).limit(50).offset(page * 50)).all()
+```
+
+---
+
+### 3. Pydantic & Logging Rules
+
+#### `pydantic/unsafe-field`
+- **Severity**: `WARNING` (-1 pt)
+- **Problem**: Storing sensitive credentials in plain `str` fields causes secrets to be printed in plain text during logging, repr output, or validation error dumps.
+```python
+# ❌ Bad: raw string appears in plain text in logs and stack traces
+class AuthRequest(BaseModel):
+    token: str
+
+# ✅ Good: Pydantic SecretStr masks value automatically
+from pydantic import SecretStr
+
+class AuthRequest(BaseModel):
+    token: SecretStr
+```
+
+#### `structlog/print-instead-of-log`
+- **Severity**: `WARNING` (-1 pt)
+- **Problem**: Using `print()` instead of structured logging prevents log aggregation, trace correlation, and JSON structured log parsing in production.
+```python
+# ❌ Bad: unformatted stdout output
+print(f"User {user_id} authenticated")
+
+# ✅ Good: structured log with contextual key-value pairs
+logger.info("user_authenticated", user_id=user_id)
+```
+
+---
+
+## 📊 Scoring Methodology
+
+Health scores start at **100** and are penalized according to finding severity:
 
 $$\text{Score} = 100 - (\text{Errors} \times 3) - (\text{Warnings} \times 1) - (\text{Dead Code} \times 1) - (\text{Critical} \times 10) - (\text{Security} \times 5) - (\text{Dependencies} \times 15)$$
 
-| Health Range | Status | Meaning | Default Exit Code |
+| Health Range | Status | Meaning | CI Exit Code |
 | :--- | :--- | :--- | :--- |
-| **75 – 100** | 🟢 **Great** | Production-ready health | `0` (Pass) |
-| **50 – 74** | 🟡 **Needs Work** | Fix recommended before merging | `1` (Fail) |
-| **0 – 49** | 🔴 **Critical** | Major stability or security concerns | `1` (Fail) |
+| **75 – 100** | 🟢 **Great** | High code health; approved for merge | `0` (Success) |
+| **50 – 74** | 🟡 **Needs Work** | Fixes recommended; review before release | `1` (Failure) |
+| **0 – 49** | 🔴 **Critical** | Major stability or security risks detected | `1` (Failure) |
 
 ---
 
 ## 🤖 AI Agent Workflow (`NEEDEDFIX.md`)
 
-When `py_doctor` runs, it automatically writes a concise, structured markdown file named `NEEDEDFIX.md` to your project root. 
-
-This file is explicitly formatted for consumption by AI coding assistants (such as Cursor, Claude Code, GitHub Copilot, or Antigravity):
+Running `py_doctor` automatically generates a structured `NEEDEDFIX.md` in the project root. This document is formatted specifically for immediate consumption by AI agents like Cursor, Claude Code, Copilot, or Antigravity.
 
 ````markdown
 # Project Health Fix List (py_doctor)
@@ -179,102 +322,76 @@ Generated: 2026-10-12 14:00:00
 
 ## Priority Fixes (Critical & Errors)
 1. **fastapi/missing-await** at `app/routes/users.py:42`
-   - Description: db.execute() called without await
+   - Description: db.execute() called without await — returns coroutine not result
    - Suggested Action: await the call: await db.execute(...)
 
 2. **fastapi/hardcoded-secret** at `app/core/config.py:7`
    - Description: SECRET_KEY hardcoded in source
-   - Suggested Action: Load secret from environment variable
+   - Suggested Action: Load secret from environment variable (e.g. os.getenv or pydantic-settings)
 ````
 
-### One-Click Agent Prompt
-Simply prompt your AI assistant:
+### Quick Agent Prompt
+Copy and paste this instruction into your AI coding assistant:
 ```text
-Read NEEDEDFIX.md and fix all reported issues in priority order.
-Run py_doctor . --score to verify that the health score passes the threshold.
+Read NEEDEDFIX.md and fix all reported issues in order of priority.
+After completing the fixes, run `py_doctor . --score` to ensure the project health score satisfies the threshold.
 ```
 
-*(Tip: Add `NEEDEDFIX.md` to your `.gitignore` so local diagnostic runs are not tracked in Git).*
+*(Recommendation: Add `NEEDEDFIX.md` to your `.gitignore` file).*
 
 ---
 
-## 🚀 Installation
-
-### Option A: Direct Installer (Recommended)
-Installs `py_doctor` globally using `uv tool` and links it to `/usr/local/bin`:
+## 💻 CLI Reference
 
 ```bash
-git clone https://github.com/aswin402/py_doctor.git
-cd py_doctor
-./tool/activate.sh
-```
-
-### Option B: Local / Virtual Environment
-Install into your active virtual environment:
-
-```bash
-uv pip install -e .
-# or with pip:
-pip install -e .
-```
-
-### Prerequisites
-- Python 3.10+
-- [uv](https://docs.astral.sh/uv/) (installed automatically by `activate.sh` if not present)
-
----
-
-## 💻 Usage & CLI Options
-
-```bash
-# Basic project scan
+# Basic scan of the current directory
 py_doctor .
 
-# Verbose output with full rule descriptions and suggestions
+# Detailed verbose report with file paths and remediation tips
 py_doctor . --verbose
 
-# Scan only files changed in git diff (great for PR checks)
-py_doctor . --diff main
+# Scan only files modified in the active git branch against main
+py_doctor . --diff origin/main
 
-# Machine-readable JSON output (ideal for dashboards and tooling)
+# Machine-readable JSON output (ideal for dashboards and custom tools)
 py_doctor . --format json
 
-# Print score only (for bash scripts & CI gates)
+# Print score only (for bash scripts and simple CI gates)
 py_doctor . --score
 
-# Auto-fix safe formatting and linting errors before evaluation
+# Automatically apply safe Ruff lint and format fixes before scoring
 py_doctor . --fix
 
-# Skip specific analyzers
-py_doctor . --no-lint
-py_doctor . --no-dead-code
-py_doctor . --no-types
-py_doctor . --no-security
-py_doctor . --no-md
+# Selectively disable specific analyzers
+py_doctor . --no-lint          # Disable Ruff linting
+py_doctor . --no-dead-code     # Disable Vulture dead code detection
+py_doctor . --no-types         # Disable Mypy type checks
+py_doctor . --no-security      # Disable pip-audit CVE vulnerability scans
+py_doctor . --no-md            # Prevent writing NEEDEDFIX.md to disk
 ```
 
-### CLI Flag Reference
+### Complete Flag Options
 
-| Flag | Description |
-| :--- | :--- |
-| `path` | Target project directory to analyze (defaults to current working directory). |
-| `--verbose` | Shows detailed error descriptions and actionable remediation advice. |
-| `--diff [REF]` | Scans only files modified compared to a Git ref (e.g. `--diff origin/main`). |
-| `--format {terminal,json}` | Chooses terminal rich UI or raw structured JSON output. |
-| `--score` | Prints only the integer score (0–100) and suppresses all spinners and styling. |
-| `--fix` | Runs safe automatic lint/format fixes through Ruff before evaluation. |
-| `--no-lint` | Skips Ruff and custom AST lint passes. |
-| `--no-dead-code` | Skips Vulture dead-code detection. |
-| `--no-types` | Skips Mypy static type checking. |
-| `--no-security` | Skips pip-audit dependency CVE scanner. |
-| `--no-md` | Prevents writing `NEEDEDFIX.md` to disk. |
-| `--version` | Displays the current `py_doctor` version. |
+| Flag | Type | Description |
+| :--- | :--- | :--- |
+| `path` | `Positional` | Target directory to scan (defaults to `.`). |
+| `--verbose` | `Flag` | Displays detailed rule descriptions and specific remediation suggestions. |
+| `--diff [REF]` | `Optional` | Limits analysis to `.py` files changed relative to Git ref (e.g. `main` or `HEAD~1`). |
+| `--format` | `Choice` | Output format: `terminal` (Rich UI) or `json` (machine-readable). |
+| `--score` | `Flag` | Outputs only the integer health score (0–100) and suppresses terminal styling. |
+| `--fix` | `Flag` | Executes safe automatic Ruff fixes before analyzing. |
+| `--no-lint` | `Flag` | Skips Ruff and custom AST visitor passes. |
+| `--no-dead-code` | `Flag` | Skips Vulture dead-code detection. |
+| `--no-types` | `Flag` | Skips Mypy static type checking. |
+| `--no-security` | `Flag` | Skips pip-audit dependency vulnerability scanning. |
+| `--no-md` | `Flag` | Prevents creation of the `NEEDEDFIX.md` file. |
+| `--version` | `Flag` | Prints the installed `py_doctor` version. |
 
 ---
 
 ## ⚙️ Configuration
 
-Configure project settings with a `py_doctor.config.json` file in your project root:
+Configure custom thresholds and exclusion lists with `py_doctor.config.json` in your project root:
 
 ```json
 {
@@ -297,7 +414,7 @@ Configure project settings with a `py_doctor.config.json` file in your project r
 }
 ```
 
-Or declare it directly in your existing `pyproject.toml`:
+Or configure directly inside your existing `pyproject.toml`:
 
 ```toml
 [tool.py_doctor]
@@ -314,19 +431,20 @@ files = ["migrations/", "tests/", "alembic/"]
 
 ---
 
-## 🔄 CI/CD — GitHub Actions
+## 🔄 CI/CD & Pre-commit
 
-Block pull requests that degrade project health below your required threshold:
+### GitHub Actions Workflow
+Block pull requests that degrade project health score below your threshold:
 
 ```yaml
-name: Project Health Check
+name: Health Check
 
 on:
   pull_request:
     branches: [ main ]
 
 jobs:
-  health-check:
+  py-doctor:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -339,8 +457,24 @@ jobs:
       - name: Install py_doctor
         run: uv tool install git+https://github.com/aswin402/py_doctor.git
 
-      - name: Run py_doctor Diff Scan
+      - name: Run py_doctor PR Diff Scan
         run: py_doctor . --diff origin/main --no-md
+```
+
+### Pre-commit Integration
+Add `py_doctor` to your `.pre-commit-config.yaml`:
+
+```yaml
+repos:
+  - repo: https://github.com/aswin402/py_doctor
+    rev: v2.0.0
+    hooks:
+      - id: py-doctor
+        name: py_doctor health check
+        entry: py_doctor . --diff HEAD --no-md
+        language: python
+        types: [python]
+        pass_filenames: false
 ```
 
 ---
@@ -350,32 +484,35 @@ jobs:
 ```
 py_doctor CLI
      │
-     ├── 1. Config.load()          (Reads py_doctor.config.json or pyproject.toml)
-     ├── 2. ProjectDetector        (Detects Python, FastAPI, SQLAlchemy versions)
+     ├── 1. Config.load()          (Loads py_doctor.config.json or pyproject.toml)
+     ├── 2. ProjectDetector        (Identifies Python, FastAPI, SQLAlchemy, Alembic)
      │
-     ├── 3. asyncio.gather() [Parallel Engine Dispatch]
-     │       ├── LintRunner        (Ruff + Custom AST Visitors)
-     │       ├── DeadCodeRunner    (Vulture dead declaration analysis)
-     │       ├── TypeRunner        (Mypy static type verification)
-     │       └── DependencyRunner  (Pip-audit CVE database scanner)
+     ├── 3. asyncio.gather() [Parallel Analysis Dispatch]
+     │       ├── LintRunner        (Ruff lint/security + Custom AST Rule Visitors)
+     │       ├── DeadCodeRunner    (Vulture dead code confidence analysis)
+     │       ├── TypeRunner        (Mypy static type checking)
+     │       └── DependencyRunner  (Pip-audit PyPA CVE vulnerability scanner)
      │
-     ├── 4. Scorer                 (Computes weighted 0–100 health index)
-     ├── 5. Reporter               (Renders Rich terminal UI / JSON stream)
-     └── 6. NEEDEDFIX.md           (Exports structured AI agent remediation task)
+     ├── 4. Scorer                 (Calculates weighted 0–100 health index)
+     ├── 5. Reporter               (Renders Rich terminal UI or JSON stream)
+     └── 6. NEEDEDFIX.md           (Generates prioritized AI agent remediation file)
 ```
 
 ---
 
-## 🧪 Testing
+## 🧪 Testing & Development
 
 Run the full automated test suite (25 unit and integration tests):
 
 ```bash
-# Using pytest
+# Run tests with pytest
 pytest -v
 
-# Or using Python standard library
+# Or run tests using Python standard library
 python -m unittest discover tests
+
+# Lint codebase and tests
+ruff check py_doctor/ tests/
 ```
 
 ---
