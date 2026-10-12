@@ -1,6 +1,5 @@
 import argparse
 import asyncio
-import json
 import os
 import subprocess
 import sys
@@ -8,6 +7,7 @@ from typing import Any
 
 from rich.console import Console
 
+from py_doctor import json_utils
 from py_doctor.analyzer.dead_code_runner import DeadCodeRunner
 from py_doctor.analyzer.dependency_runner import DependencyRunner
 from py_doctor.analyzer.lint_runner import LintRunner
@@ -17,7 +17,7 @@ from py_doctor.config import Config
 from py_doctor.reporter import Reporter
 from py_doctor.scorer import calculate_score, categorize_issues
 
-__version__ = "2.0.2"
+__version__ = "2.0.3"
 __author__ = "aswin"
 __description__ = "Diagnose and fix your FastAPI project health"
 
@@ -206,7 +206,7 @@ async def run(args: argparse.Namespace) -> None:
                 "source_file_count": detector.source_file_count,
             },
         }
-        json_str = json.dumps(output, indent=2)
+        json_str = json_utils.dumps(output, indent=True)
         if output_opt:
             await asyncio.to_thread(_write_text_file, output_opt, json_str)
             if not score_opt:

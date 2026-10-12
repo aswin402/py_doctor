@@ -1,8 +1,9 @@
 import asyncio
-import json
 import os
 import subprocess
 from typing import Any, Optional
+
+from py_doctor import json_utils
 
 
 class TypeRunner:
@@ -54,7 +55,7 @@ class TypeRunner:
             if not line.strip():
                 continue
             try:
-                issue = json.loads(line)
+                issue = json_utils.loads(line)
                 try:
                     file_path = os.path.relpath(issue.get("file", ""), self.project_path)
                 except ValueError:
@@ -76,6 +77,6 @@ class TypeRunner:
                         "description": message,
                     }
                 )
-            except (json.JSONDecodeError, Exception):
+            except (json_utils.JSONDecodeError, Exception):
                 continue
         return diagnostics

@@ -2,7 +2,7 @@
 py_doctor - Advanced FastAPI project health diagnostic tool
 """
 
-__version__ = "2.0.2"
+__version__ = "2.0.3"
 __author__ = "aswin"
 __description__ = "Comprehensive FastAPI project health checker with advanced error detection"
 

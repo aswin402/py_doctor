@@ -1,8 +1,8 @@
-import json
 import os
 import sys
 from typing import Optional
 
+from py_doctor import json_utils
 from py_doctor.constants import DEFAULT_IGNORE_RULES
 
 if sys.version_info >= (3, 11):
@@ -60,8 +60,7 @@ class Config:
     def _load_from_file(cls, filepath: str) -> "Config":
         """Load config from JSON file"""
         try:
-            with open(filepath, encoding="utf-8") as f:
-                data = json.load(f)
+            data = json_utils.load_file(filepath)
             ignore = data.get("ignore", {})
             return cls(
                 lint=data.get("lint", True),

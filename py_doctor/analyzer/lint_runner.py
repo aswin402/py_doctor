@@ -1,11 +1,11 @@
 import ast
 import asyncio
 import inspect
-import json
 import os
 import subprocess
 from typing import Any, Optional
 
+from py_doctor import json_utils
 from py_doctor.constants import DEFAULT_EXCLUDE_DIRS_STR, DEFAULT_SKIP_DIRS, RUFF_SELECT_FLAGS
 from py_doctor.rules import (
     async_rules,
@@ -99,8 +99,8 @@ class LintRunner:
             return []
 
         try:
-            issues = json.loads(result.stdout)
-        except (json.JSONDecodeError, Exception):
+            issues = json_utils.loads(result.stdout)
+        except (json_utils.JSONDecodeError, Exception):
             return []
 
         diagnostics: list[dict[str, Any]] = []

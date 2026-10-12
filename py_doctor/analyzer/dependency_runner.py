@@ -1,8 +1,9 @@
 import asyncio
-import json
 import os
 import subprocess
 from typing import Any, Optional
+
+from py_doctor import json_utils
 
 
 class DependencyRunner:
@@ -45,8 +46,8 @@ class DependencyRunner:
             return []
 
         try:
-            data = json.loads(result.stdout)
-        except (json.JSONDecodeError, Exception):
+            data = json_utils.loads(result.stdout)
+        except (json_utils.JSONDecodeError, Exception):
             return []
 
         diagnostics: list[dict[str, Any]] = []

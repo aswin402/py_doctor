@@ -1,6 +1,6 @@
 [project]
 name = "py_doctor"
-version = "2.0.2"
+version = "2.0.3"
 description = "Comprehensive FastAPI project health checker"
 authors = [{name = "aswin"}]
 readme = "README.md"
@@ -13,6 +13,7 @@ dependencies = [
     "vulture>=2.3",
     "pip-audit>=2.7.0",
     "rich>=13.0.0",
+    "orjson>=3.11.5",
 ]
 
 [project.optional-dependencies]

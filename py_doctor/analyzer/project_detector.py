@@ -1,11 +1,11 @@
 import asyncio
-import json
 import os
 import re
 import subprocess
 import sys
 from typing import Any, Optional
 
+from py_doctor import json_utils
 from py_doctor.constants import DEFAULT_SKIP_DIRS
 
 
@@ -54,7 +54,7 @@ class ProjectDetector:
                 timeout=10,
             )
             if result.returncode == 0 and result.stdout.strip():
-                package_data = json.loads(result.stdout)
+                package_data = json_utils.loads(result.stdout)
         except Exception:
             pass
 
@@ -69,7 +69,7 @@ class ProjectDetector:
                     timeout=10,
                 )
                 if result.returncode == 0 and result.stdout.strip():
-                    package_data = json.loads(result.stdout)
+                    package_data = json_utils.loads(result.stdout)
             except Exception:
                 pass
 
