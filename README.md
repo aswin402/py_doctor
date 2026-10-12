@@ -271,6 +271,75 @@ async def get_user(user_id: int):
     return await db_get_user(user_id)
 ```
 
+#### `fastapi/insecure-cors`
+- **Severity**: `ERROR` (-3 pts, Critical & Security penalty)
+- **Problem**: Configuring `allow_origins=["*"]` with `allow_credentials=True` violates the CORS specification (browsers reject wildcard origins when credentials are enabled) and introduces security risks by exposing authenticated sessions.
+```python
+# ❌ Bad: wildcard origin with credentials allowed
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+)
+
+# ✅ Good: explicit trusted origins specified
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://frontend.example.com", "https://app.example.com"],
+    allow_credentials=True,
+    allow_methods=["*"],
+)
+```
+
+#### `fastapi/bare-except-swallow`
+- **Severity**: `WARNING` (-1 pt)
+- **Problem**: Empty exception handlers (`except:` or `except Exception:` with only `pass` or `...`) silently swallow unexpected errors, masking runtime bugs and making production debugging nearly impossible.
+```python
+# ❌ Bad: silent error swallowing
+try:
+    await process_payment(order_id)
+except Exception:
+    pass
+
+# ✅ Good: log exception with context or raise HTTPException
+try:
+    await process_payment(order_id)
+except PaymentGatewayError as exc:
+    logger.exception("payment_failed", order_id=order_id, error=str(exc))
+    raise HTTPException(status_code=502, detail="Payment processing failed")
+```
+
+#### `fastapi/mutable-default-argument`
+- **Severity**: `ERROR` (-3 pts, Critical penalty)
+- **Problem**: Python instantiates mutable default values (`list = []`, `dict = {}`) only once when the route is loaded. Under concurrent requests, all users share the same mutable object in memory, leaking state and data across sessions.
+```python
+# ❌ Bad: mutable default list persists state across user requests
+@app.get("/items")
+async def get_items(tags: list = []):
+    tags.append("default")
+    return {"tags": tags}
+
+# ✅ Good: default to None and initialize per request
+@app.get("/items")
+async def get_items(tags: Optional[list] = None):
+    tags = list(tags) if tags is not None else []
+    return {"tags": tags}
+```
+
+#### `fastapi/invalid-route-path`
+- **Severity**: `WARNING` (-1 pt)
+- **Problem**: Route paths declared without a leading slash (e.g. `@app.get("users")`) or containing duplicate slashes (`@app.get("//users")`) violate Starlette conventions and trigger redirect issues or 404 mismatches.
+```python
+# ❌ Bad: missing leading slash or duplicate slashes
+@app.get("users")
+@app.get("//users/active")
+
+# ✅ Good: explicit normalized path
+@app.get("/users")
+@app.get("/users/active")
+```
+
 ---
 
 ### 2. Database & SQLAlchemy AST Rules
@@ -309,6 +378,25 @@ users = await session.scalars(select(User)).all()
 
 # ✅ Good: bounded query with pagination
 users = await session.scalars(select(User).limit(50).offset(page * 50)).all()
+```
+
+#### `database/n-plus-one-query`
+- **Severity**: `WARNING` (-1 pt)
+- **Problem**: Executing database queries (`execute()`, `scalars()`, `fetchall()`) inside loops causes an N+1 query problem, exponentially increasing database round-trips and degrading latency.
+```python
+# ❌ Bad: database query inside loop (N+1 queries)
+for user in users:
+    orders = (await db.scalars(select(Order).where(Order.user_id == user.id))).all()
+    process_orders(user, orders)
+
+# ✅ Good: batch load with joins or selectinload
+users = (
+    await db.scalars(
+        select(User).options(selectinload(User.orders))
+    )
+).all()
+for user in users:
+    process_orders(user, user.orders)
 ```
 
 ---
@@ -400,8 +488,14 @@ py_doctor . --verbose
 # Scan only files modified in the active git branch against main
 py_doctor . --diff origin/main
 
+# Generate an interactive HTML report
+py_doctor . --format html --output report.html
+
 # Machine-readable JSON output (ideal for dashboards and custom tools)
 py_doctor . --format json
+
+# Enforce a custom pass/fail threshold directly on CLI (overrides config)
+py_doctor . --threshold 85
 
 # Print score only (for bash scripts and simple CI gates)
 py_doctor . --score
@@ -424,7 +518,9 @@ py_doctor . --no-md            # Prevent writing NEEDEDFIX.md to disk
 | `path` | `Positional` | Target directory to scan (defaults to `.`). |
 | `--verbose` | `Flag` | Displays detailed rule descriptions and specific remediation suggestions. |
 | `--diff [REF]` | `Optional` | Limits analysis to `.py` files changed relative to Git ref (e.g. `main` or `HEAD~1`). |
-| `--format` | `Choice` | Output format: `terminal` (Rich UI) or `json` (machine-readable). |
+| `--format` | `Choice` | Output format: `terminal` (Rich UI), `json` (machine-readable), or `html` (interactive web report). |
+| `--output [PATH]` | `Optional` | Custom destination file path to save report (e.g. `report.html` or `report.json`). |
+| `--threshold [N]` | `Optional` | Minimum required health score to exit with 0 (overrides config threshold). |
 | `--score` | `Flag` | Outputs only the integer health score (0–100) and suppresses terminal styling. |
 | `--fix` | `Flag` | Executes safe automatic Ruff fixes before analyzing. |
 | `--no-lint` | `Flag` | Skips Ruff and custom AST visitor passes. |
@@ -433,6 +529,7 @@ py_doctor . --no-md            # Prevent writing NEEDEDFIX.md to disk
 | `--no-security` | `Flag` | Skips pip-audit dependency vulnerability scanning. |
 | `--no-md` | `Flag` | Prevents creation of the `NEEDEDFIX.md` file. |
 | `--version` | `Flag` | Prints the installed `py_doctor` version. |
+
 
 ---
 

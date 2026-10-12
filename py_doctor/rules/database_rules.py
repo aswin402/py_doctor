@@ -222,3 +222,44 @@ class SlowQueryDetectionRule(BaseRule):
             term in seg_lower
             for term in (".limit(", "limit=", "offset=", "first()", "one()", "slice(", "paginate")
         )
+
+
+class NPlusOneQueryRule(BaseRule):
+    rule_id = "database/n-plus-one-query"
+    severity = "WARN"
+    description = "Database query executed inside a loop - potential N+1 query performance bottleneck"
+
+    @classmethod
+    def check(cls, tree: ast.Module, source: str, rel_path: str) -> list[dict[str, Any]]:
+        diagnostics: list[dict[str, Any]] = []
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.For, ast.AsyncFor, ast.While)):
+                for child in ast.walk(node):
+                    if child is node:
+                        continue
+                    if isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute):
+                        attr_name = child.func.attr
+                        if attr_name in ("execute", "scalars", "scalar", "fetch", "fetchall", "fetchrow"):
+                            val = getattr(child.func, "value", None)
+                            is_db_obj = False
+                            if isinstance(val, ast.Name):
+                                if val.id in ("session", "db", "conn", "connection", "cursor", "client", "pool"):
+                                    is_db_obj = True
+                            elif isinstance(val, ast.Attribute):
+                                if val.attr in ("session", "db", "conn", "cursor"):
+                                    is_db_obj = True
+                            elif attr_name in ("fetchall", "fetchrow"):
+                                is_db_obj = True
+
+                            if is_db_obj:
+                                diagnostics.append(
+                                    {
+                                        "type": cls.severity,
+                                        "rule": cls.rule_id,
+                                        "location": f"{rel_path}:{getattr(child, 'lineno', 1)}",
+                                        "description": cls.description,
+                                        "suggestion": "Batch queries using IN clauses, eager loading (selectinload/joinedload), or query outside loop",
+                                    }
+                                )
+                                break
+        return diagnostics

@@ -2,10 +2,18 @@ import ast
 import unittest
 
 from py_doctor.rules.async_rules import BlockingIOInAsyncRule, MissingAwaitRule
-from py_doctor.rules.database_rules import ConnectionLeakRule, SlowQueryDetectionRule
+from py_doctor.rules.database_rules import (
+    ConnectionLeakRule,
+    NPlusOneQueryRule,
+    SlowQueryDetectionRule,
+)
 from py_doctor.rules.fastapi_rules import (
+    BareExceptSwallowRule,
     HardcodedSecretRule,
+    InsecureCORSRule,
+    InvalidRoutePathRule,
     MissingResponseModelRule,
+    MutableDefaultArgumentRule,
     SyncInAsyncRouteRule,
 )
 from py_doctor.rules.pydantic_rules import MissingValidatorRule, UnsafeFieldRule
@@ -257,5 +265,138 @@ except Exception:
         self.assertEqual(len(parse_and_check(MissingExceptionLoggingRule, good_code)), 0)
 
 
+    def test_insecure_cors(self):
+        bad_code = """
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+)
+"""
+        diags = parse_and_check(InsecureCORSRule, bad_code)
+        self.assertEqual(len(diags), 1)
+        self.assertEqual(diags[0]["rule"], "fastapi/insecure-cors")
+
+        good_code = """
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://app.example.com"],
+    allow_credentials=True,
+)
+"""
+        self.assertEqual(len(parse_and_check(InsecureCORSRule, good_code)), 0)
+
+        good_wildcard_no_creds = """
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+)
+"""
+        self.assertEqual(len(parse_and_check(InsecureCORSRule, good_wildcard_no_creds)), 0)
+
+    def test_bare_except_swallow(self):
+        bad_code = """
+try:
+    do_something()
+except Exception:
+    pass
+"""
+        diags = parse_and_check(BareExceptSwallowRule, bad_code)
+        self.assertEqual(len(diags), 1)
+        self.assertEqual(diags[0]["rule"], "fastapi/bare-except-swallow")
+
+        good_code = """
+try:
+    do_something()
+except Exception as e:
+    logger.exception("Failed to do something")
+"""
+        self.assertEqual(len(parse_and_check(BareExceptSwallowRule, good_code)), 0)
+
+    def test_n_plus_one_query(self):
+        bad_code = """
+def fetch_users(user_ids):
+    for u_id in user_ids:
+        user = session.execute(select(User).where(User.id == u_id))
+"""
+        diags = parse_and_check(NPlusOneQueryRule, bad_code)
+        self.assertEqual(len(diags), 1)
+        self.assertEqual(diags[0]["rule"], "database/n-plus-one-query")
+
+        good_code = """
+def fetch_users(user_ids):
+    users = session.execute(select(User).where(User.id.in_(user_ids)))
+"""
+        self.assertEqual(len(parse_and_check(NPlusOneQueryRule, good_code)), 0)
+
+    def test_sync_in_async_route_requests(self):
+        code = """
+@app.get("/data")
+async def fetch_remote():
+    res = requests.get("https://api.example.com")
+    return res.json()
+"""
+        diags = parse_and_check(SyncInAsyncRouteRule, code)
+        self.assertEqual(len(diags), 1)
+        self.assertEqual(diags[0]["rule"], "fastapi/sync-in-async-route")
+        self.assertIn("httpx.AsyncClient", diags[0]["suggestion"])
+
+    def test_blocking_io_in_async_requests(self):
+        code = """
+async def do_sync_post():
+    requests.post("https://api.example.com", json={})
+"""
+        diags = parse_and_check(BlockingIOInAsyncRule, code)
+        self.assertEqual(len(diags), 1)
+        self.assertEqual(diags[0]["rule"], "async/blocking-io")
+
+    def test_mutable_default_argument(self):
+        bad_code = """
+@app.get("/items")
+async def get_items(tags: list = [], options: dict = {}):
+    return {"tags": tags}
+"""
+        diags = parse_and_check(MutableDefaultArgumentRule, bad_code)
+        self.assertEqual(len(diags), 2)
+        self.assertEqual(diags[0]["rule"], "fastapi/mutable-default-argument")
+
+        good_code = """
+@app.get("/items")
+async def get_items(tags: list = None, options: dict = None):
+    tags = tags or []
+    return {"tags": tags}
+"""
+        self.assertEqual(len(parse_and_check(MutableDefaultArgumentRule, good_code)), 0)
+
+    def test_invalid_route_path(self):
+        missing_slash = """
+@app.get("items")
+async def get_items():
+    return []
+"""
+        diags = parse_and_check(InvalidRoutePathRule, missing_slash)
+        self.assertEqual(len(diags), 1)
+        self.assertEqual(diags[0]["rule"], "fastapi/invalid-route-path")
+        self.assertIn("missing leading '/'", diags[0]["description"])
+
+        double_slash = """
+@app.get("//items/detail")
+async def get_detail():
+    return {}
+"""
+        diags2 = parse_and_check(InvalidRoutePathRule, double_slash)
+        self.assertEqual(len(diags2), 1)
+        self.assertIn("contains duplicate slashes", diags2[0]["description"])
+
+        valid_path = """
+@app.get("/items")
+async def get_items():
+    return []
+"""
+        self.assertEqual(len(parse_and_check(InvalidRoutePathRule, valid_path)), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
+

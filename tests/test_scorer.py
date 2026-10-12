@@ -34,15 +34,17 @@ class TestScorer(unittest.TestCase):
             {"type": "WARN", "rule": "ruff/W291", "location": "main.py:2"},
             {"type": "DEAD", "rule": "vulture/dead-code", "location": "main.py:10"},
             {"type": "ERR", "rule": "fastapi/hardcoded-secret", "location": "config.py:5"},
+            {"type": "ERR", "rule": "fastapi/insecure-cors", "location": "main.py:12"},
+            {"type": "ERR", "rule": "fastapi/mutable-default-argument", "location": "routes.py:10"},
             {"type": "ERR", "rule": "bandit/B105", "location": "config.py:6"},
             {"type": "ERR", "rule": "audit/PYSEC-2023-1", "location": "reqs.txt"},
         ]
         cats = categorize_issues(diagnostics)
-        self.assertEqual(cats["errors"], 4)
+        self.assertEqual(cats["errors"], 6)
         self.assertEqual(cats["warnings"], 1)
         self.assertEqual(cats["dead_code"], 1)
-        self.assertEqual(cats["critical"], 1)  # fastapi/hardcoded-secret
-        self.assertEqual(cats["security"], 2)  # fastapi/hardcoded-secret + bandit/B105
+        self.assertEqual(cats["critical"], 3)  # hardcoded-secret + insecure-cors + mutable-default-argument
+        self.assertEqual(cats["security"], 3)  # hardcoded-secret + insecure-cors + bandit/B105
         self.assertEqual(cats["dependencies"], 1)  # audit/PYSEC-2023-1
 
 

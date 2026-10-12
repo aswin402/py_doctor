@@ -111,15 +111,26 @@ class BlockingIOInAsyncRule(BaseRule):
             return False
         if isinstance(node.func, ast.Name) and node.func.id in cls.BLOCKING_FUNCTIONS:
             return True
-        return bool(
-            isinstance(node.func, ast.Attribute)
-            and isinstance(node.func.value, ast.Name)
-            and node.func.value.id == "time"
-            and node.func.attr == "sleep"
-        )
+        if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
+            if node.func.value.id == "time" and node.func.attr == "sleep":
+                return True
+            if node.func.value.id == "requests" and node.func.attr in ("get", "post", "put", "delete", "patch", "request"):
+                return True
+            if node.func.value.id == "subprocess" and node.func.attr in ("run", "call", "check_output", "check_call"):
+                return True
+        return False
 
     @classmethod
     def _get_operation_name(cls, node: ast.AST) -> str:
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            return cls.BLOCKING_FUNCTIONS.get(node.func.id, node.func.id)
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name):
+                return cls.BLOCKING_FUNCTIONS.get(node.func.id, node.func.id)
+            if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
+                if node.func.value.id == "time":
+                    return "sleep"
+                if node.func.value.id == "requests":
+                    return f"requests.{node.func.attr}() (use httpx.AsyncClient)"
+                if node.func.value.id == "subprocess":
+                    return f"subprocess.{node.func.attr}() (use asyncio.create_subprocess_exec)"
         return "I/O operation"
+

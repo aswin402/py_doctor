@@ -1,3 +1,4 @@
+import html
 import os
 from datetime import date
 
@@ -14,9 +15,9 @@ class Reporter:
         self.console = Console()
 
     async def generate_report(
-        self, diagnostics, detector, score, errors, warnings, dead_code, file_count, threshold=75
+        self, diagnostics, detector, score, errors, warnings, dead_code, file_count, threshold=75, project_path="."
     ):
-        self._print_command()
+        self._print_command(project_path)
         self._print_detection(detector)
 
         self.console.print("[bold green]✓[/bold green] Analysis complete\n")
@@ -28,8 +29,9 @@ class Reporter:
         self._print_priority_fixes(diagnostics)
         self._print_footer()
 
-    def _print_command(self):
-        self.console.print("[cyan]  ❯ py_doctor . --verbose[/cyan]\n")
+    def _print_command(self, project_path="."):
+        cmd_str = f"py_doctor {project_path}{' --verbose' if self.verbose else ''}"
+        self.console.print(f"[cyan]  ❯ {cmd_str}[/cyan]\n")
 
     def _print_detection(self, detector):
         self.console.print("Detecting project...")
@@ -95,6 +97,8 @@ class Reporter:
         self.console.print(f"{tag}  {rule}{' ' * pad}{loc}")
         if self.verbose and d.get("description"):
             self.console.print(f"       [dim]{d['description']}[/dim]")
+        if self.verbose and d.get("suggestion"):
+            self.console.print(f"       [italic green]↳ Suggestion: {d['suggestion']}[/italic green]")
         self.console.print()
 
     def _print_dead_code_diagnostics(self, diagnostics):
@@ -143,11 +147,17 @@ class Reporter:
         errs = [d for d in diagnostics if d["type"] == "ERR"][:5]
         if errs:
             for d in errs:
-                action = d.get("suggestion") or d.get("description", "")
-                self.console.print(f"[red]→[/red] Fix [cyan]{d['rule']}[/cyan] — {action[:70]}")
+                loc = d.get("location", "")
+                loc_str = f": [dim]{loc}[/dim]" if loc else ""
+                self.console.print(f"  [red]→[/red] Fix [cyan]{d['rule']}[/cyan]{loc_str}")
+                if d.get("suggestion"):
+                    self.console.print(f"    [italic green]↳ Suggestion: {d['suggestion']}[/italic green]")
+                elif d.get("description"):
+                    self.console.print(f"    [dim]↳ Cause: {d['description']}[/dim]")
         else:
-            self.console.print("[bold green]✓ No errors found![/bold green]")
+            self.console.print("  [bold green]✓ No errors found![/bold green]")
         self.console.print()
+
 
     def _print_footer(self):
         self.console.print("Run [cyan]py_doctor . --fix[/cyan] to auto-fix with AI · [cyan]--diff main[/cyan] for PR mode")
@@ -265,3 +275,230 @@ class Reporter:
         output_path = os.path.join(project_path, "NEEDEDFIX.md")
         with open(output_path, "w", encoding="utf-8") as f:
             f.write("\n".join(buf))
+
+    async def generate_html_report(
+        self,
+        output_path: str,
+        diagnostics: list[dict],
+        detector,
+        score: int,
+        errors: int,
+        warnings: int,
+        dead_code: int,
+        file_count: int,
+        threshold: int = 75,
+    ) -> str:
+        today = date.today().strftime("%Y-%m-%d")
+        mid_threshold = max(0, threshold - 25)
+        color = "#10b981" if score >= threshold else "#f59e0b" if score >= mid_threshold else "#ef4444"
+        label = "Great" if score >= threshold else "Needs work" if score >= mid_threshold else "Critical"
+
+        rows = []
+        for d in diagnostics:
+            sev = d.get("type", "INFO")
+            sev_class = "err" if sev == "ERR" else "warn" if sev == "WARN" else "dead" if sev == "DEAD" else "info"
+            rule = html.escape(str(d.get("rule", "")))
+            loc = html.escape(str(d.get("location", "")))
+            desc = html.escape(str(d.get("description", "")))
+            sugg = html.escape(str(d.get("suggestion", "")))
+
+            sugg_html = f'<div class="suggestion"><strong>Suggestion:</strong> {sugg}</div>' if sugg else ""
+
+            rows.append(f"""
+            <div class="card issue-card {sev_class}">
+                <div class="card-header">
+                    <span class="badge {sev_class}">{sev}</span>
+                    <span class="rule-name">{rule}</span>
+                    <span class="location">{loc}</span>
+                </div>
+                <div class="card-body">
+                    <p class="description">{desc}</p>
+                    {sugg_html}
+                </div>
+            </div>
+            """)
+
+        cards_html = "\n".join(rows) if rows else '<div class="card"><p class="empty-state">No issues detected! Excellent code health.</p></div>'
+
+        py_ver = html.escape(str(getattr(detector, "python_version", "unknown")))
+        fa_ver = html.escape(str(getattr(detector, "fastapi_version", "not installed") or "not installed"))
+        sa_ver = html.escape(str(getattr(detector, "sqlalchemy_version", "not installed") or "not installed"))
+
+        html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>py_doctor Health Report</title>
+<style>
+  :root {{
+    --bg: #0d1117;
+    --card: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --text-muted: #8b949e;
+    --err: #f85149;
+    --warn: #d29922;
+    --info: #58a6ff;
+    --success: #3fb950;
+  }}
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    padding: 2rem;
+    line-height: 1.5;
+  }}
+  .container {{ max-width: 1000px; margin: 0 auto; }}
+  header {{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1rem;
+    margin-bottom: 1.5rem;
+  }}
+  h1 {{ font-size: 1.6rem; font-weight: 700; color: #fff; }}
+  .date {{ color: var(--text-muted); font-size: 0.9rem; }}
+  .score-card {{
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+  }}
+  .score-circle {{
+    font-size: 3rem;
+    font-weight: 800;
+    color: {color};
+    min-width: 120px;
+    text-align: center;
+  }}
+  .score-info {{ flex: 1; }}
+  .score-label {{ font-size: 1.2rem; font-weight: 600; color: {color}; margin-bottom: 0.5rem; }}
+  .bar-bg {{ background: #21262d; border-radius: 4px; height: 10px; overflow: hidden; margin-bottom: 0.8rem; }}
+  .bar-fill {{ background: {color}; height: 100%; width: {score}%; transition: width 0.3s ease; }}
+  .chips {{ display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }}
+  .chip {{
+    background: #21262d;
+    border: 1px solid var(--border);
+    padding: 0.2rem 0.6rem;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }}
+  .filters {{ display: flex; gap: 0.5rem; margin-bottom: 1rem; }}
+  .btn {{
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+  }}
+  .btn:hover {{ border-color: #8b949e; }}
+  .btn.active {{ background: #21262d; border-color: #58a6ff; color: #58a6ff; }}
+  .card {{
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+    margin-bottom: 0.8rem;
+  }}
+  .card-header {{
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+  }}
+  .badge {{
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    text-transform: uppercase;
+  }}
+  .badge.err {{ background: rgba(248, 81, 73, 0.2); color: var(--err); border: 1px solid var(--err); }}
+  .badge.warn {{ background: rgba(210, 153, 34, 0.2); color: var(--warn); border: 1px solid var(--warn); }}
+  .badge.dead {{ background: rgba(163, 113, 247, 0.2); color: #a371f7; border: 1px solid #a371f7; }}
+  .badge.info {{ background: rgba(88, 166, 255, 0.2); color: var(--info); border: 1px solid var(--info); }}
+  .rule-name {{ font-family: monospace; font-weight: 600; color: #fff; }}
+  .location {{ color: var(--text-muted); font-size: 0.85rem; margin-left: auto; font-family: monospace; }}
+  .description {{ font-size: 0.95rem; margin-bottom: 0.4rem; }}
+  .suggestion {{
+    background: #0d1117;
+    border-left: 3px solid var(--success);
+    padding: 0.5rem 0.8rem;
+    border-radius: 0 4px 4px 0;
+    font-size: 0.85rem;
+    color: #e6edf3;
+    margin-top: 0.5rem;
+  }}
+  .empty-state {{ text-align: center; color: var(--success); font-weight: 600; padding: 2rem; }}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>py_doctor Health Report</h1>
+    <div class="date">Scanned {today}</div>
+  </header>
+
+  <div class="score-card">
+    <div class="score-circle">{score}</div>
+    <div class="score-info">
+      <div class="score-label">{label} &bull; {score} / 100</div>
+      <div class="bar-bg"><div class="bar-fill"></div></div>
+      <div class="chips">
+        <span class="chip">Python {py_ver}</span>
+        <span class="chip">FastAPI {fa_ver}</span>
+        <span class="chip">SQLAlchemy {sa_ver}</span>
+        <span class="chip">{file_count} files</span>
+        <span class="chip">{errors} errors</span>
+        <span class="chip">{warnings} warnings</span>
+        <span class="chip">{dead_code} dead code</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="filters">
+    <button class="btn active" onclick="filterType('all', this)">All ({len(diagnostics)})</button>
+    <button class="btn" onclick="filterType('err', this)">Errors ({errors})</button>
+    <button class="btn" onclick="filterType('warn', this)">Warnings ({warnings})</button>
+    <button class="btn" onclick="filterType('dead', this)">Dead Code ({dead_code})</button>
+  </div>
+
+  <div id="issues-list">
+    {cards_html}
+  </div>
+</div>
+
+<script>
+function filterType(type, btn) {{
+  document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const cards = document.querySelectorAll('.issue-card');
+  cards.forEach(c => {{
+    if (type === 'all' || c.classList.contains(type)) {{
+      c.style.display = 'block';
+    }} else {{
+      c.style.display = 'none';
+    }}
+  }});
+}}
+</script>
+</body>
+</html>
+"""
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(html_content)
+
+        return html_content
+

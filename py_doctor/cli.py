@@ -17,7 +17,7 @@ from py_doctor.config import Config
 from py_doctor.reporter import Reporter
 from py_doctor.scorer import calculate_score, categorize_issues
 
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 __author__ = "aswin"
 __description__ = "Diagnose and fix your FastAPI project health"
 
@@ -71,7 +71,9 @@ def main() -> None:
     parser.add_argument("--no-types", action="store_true", help="Skip Mypy type checking")
     parser.add_argument("--no-security", action="store_true", help="Skip Pip-audit dependency vulnerability scan")
     parser.add_argument("--no-md", action="store_true", help="Skip generating NEEDEDFIX.md")
-    parser.add_argument("--format", choices=["terminal", "json"], default="terminal")
+    parser.add_argument("--format", choices=["terminal", "json", "html"], default="terminal", help="Report output format")
+    parser.add_argument("--output", type=str, default=None, help="Save report to specified file path (e.g. report.html)")
+    parser.add_argument("--threshold", type=int, default=None, help="Minimum health score required to pass (overrides config)")
     parser.add_argument(
         "--diff",
         nargs="?",
@@ -82,6 +84,7 @@ def main() -> None:
 
     args = parser.parse_args()
     asyncio.run(run(args))
+
 
 
 async def run(args: argparse.Namespace) -> None:
@@ -102,8 +105,11 @@ async def run(args: argparse.Namespace) -> None:
     diff_opt = getattr(args, "diff", None)
     no_md_opt = getattr(args, "no_md", False)
     verbose_opt = getattr(args, "verbose", False)
+    output_opt = getattr(args, "output", None)
+    threshold_arg = getattr(args, "threshold", None)
+    threshold = threshold_arg if threshold_arg is not None else config.threshold
 
-    is_quiet_mode = score_opt or format_opt == "json"
+    is_quiet_mode = score_opt or format_opt in ("json", "html")
 
     # Auto-fix stage
     if fix_opt:
@@ -157,7 +163,7 @@ async def run(args: argparse.Namespace) -> None:
     if format_opt == "json":
         output = {
             "score": score,
-            "threshold": config.threshold,
+            "threshold": threshold,
             "categories": categorized,
             "diagnostics": diagnostics,
             "project": {
@@ -167,7 +173,30 @@ async def run(args: argparse.Namespace) -> None:
                 "source_file_count": detector.source_file_count,
             },
         }
-        print(json.dumps(output, indent=2))
+        json_str = json.dumps(output, indent=2)
+        if output_opt:
+            with open(output_opt, "w", encoding="utf-8") as f:
+                f.write(json_str)
+            if not score_opt:
+                print(f"JSON report generated: {output_opt}")
+        else:
+            print(json_str)
+    elif format_opt == "html":
+        reporter = Reporter(verbose=verbose_opt)
+        html_file = output_opt or os.path.join(project_path, "py_doctor_report.html")
+        await reporter.generate_html_report(
+            output_path=html_file,
+            diagnostics=diagnostics,
+            detector=detector,
+            score=score,
+            errors=categorized["errors"],
+            warnings=categorized["warnings"],
+            dead_code=categorized["dead_code"],
+            file_count=detector.source_file_count,
+            threshold=threshold,
+        )
+        if not score_opt:
+            print(f"HTML report generated: {html_file}")
     elif score_opt:
         # If running in CI pipeline score mode, just print the integer
         print(score)
@@ -181,10 +210,27 @@ async def run(args: argparse.Namespace) -> None:
             warnings=categorized["warnings"],
             dead_code=categorized["dead_code"],
             file_count=detector.source_file_count,
-            threshold=config.threshold,
+            threshold=threshold,
+            project_path=project_path,
         )
 
-    if not no_md_opt and format_opt != "json":
+    # Optional HTML generation if user ran in terminal mode with --output report.html
+    if output_opt and output_opt.endswith(".html") and format_opt == "terminal":
+        reporter = Reporter(verbose=verbose_opt)
+        await reporter.generate_html_report(
+            output_path=output_opt,
+            diagnostics=diagnostics,
+            detector=detector,
+            score=score,
+            errors=categorized["errors"],
+            warnings=categorized["warnings"],
+            dead_code=categorized["dead_code"],
+            file_count=detector.source_file_count,
+            threshold=threshold,
+        )
+        console.print(f"[bold green]✓[/bold green] HTML report saved to [cyan]{output_opt}[/cyan]")
+
+    if not no_md_opt and format_opt not in ("json", "html"):
         reporter = Reporter(verbose=verbose_opt)
         await reporter.generate_markdown_report(
             project_path=project_path,
@@ -195,12 +241,13 @@ async def run(args: argparse.Namespace) -> None:
             warnings=categorized["warnings"],
             dead_code=categorized["dead_code"],
             file_count=detector.source_file_count,
-            threshold=config.threshold,
+            threshold=threshold,
         )
 
     # Fail the CI build if the score drops below the configured threshold
-    if score < config.threshold:
+    if score < threshold:
         sys.exit(1)
+
 
 
 async def run_analysis(

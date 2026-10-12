@@ -104,7 +104,47 @@ asyncio.run(run(args))
             self.assertIn("fastapi/missing-response-model", content)
             self.assertIn("Add response_model=Model", content)
 
+    def test_html_report_generation(self):
+        from py_doctor.analyzer.project_detector import ProjectDetector
+        from py_doctor.reporter import Reporter
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            detector = ProjectDetector(tmpdir)
+            detector.python_version = "3.12.0"
+            detector.source_file_count = 1
+            diagnostics = [
+                {
+                    "type": "ERR",
+                    "rule": "fastapi/insecure-cors",
+                    "location": "app/main.py:10",
+                    "description": "Insecure CORS",
+                    "suggestion": "Specify explicit origins",
+                }
+            ]
+            reporter = Reporter(verbose=True)
+            html_path = os.path.join(tmpdir, "report.html")
+            asyncio.run(
+                reporter.generate_html_report(
+                    output_path=html_path,
+                    diagnostics=diagnostics,
+                    detector=detector,
+                    score=82,
+                    errors=1,
+                    warnings=0,
+                    dead_code=0,
+                    file_count=1,
+                    threshold=75,
+                )
+            )
+            self.assertTrue(os.path.exists(html_path))
+            with open(html_path, encoding="utf-8") as f:
+                content = f.read()
+            self.assertIn("py_doctor Health Report", content)
+            self.assertIn("fastapi/insecure-cors", content)
+            self.assertIn("Specify explicit origins", content)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

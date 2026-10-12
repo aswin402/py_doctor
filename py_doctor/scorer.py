@@ -42,6 +42,8 @@ def categorize_issues(diagnostics: list[dict[str, Any]]) -> dict[str, int]:
 
     critical_rules = [
         "fastapi/hardcoded-secret",
+        "fastapi/insecure-cors",
+        "fastapi/mutable-default-argument",
         "sqlalchemy/missing-session-close",
         "database/connection-leak",
         "async/missing-await",
@@ -52,6 +54,7 @@ def categorize_issues(diagnostics: list[dict[str, Any]]) -> dict[str, int]:
         "bandit/",
         "ruff/S",
         "fastapi/hardcoded-secret",
+        "fastapi/insecure-cors",
         "pydantic/unsafe-field",
     ]
 
