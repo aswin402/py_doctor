@@ -1,0 +1,192 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 620" width="100%" height="100%">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&amp;display=swap');
+
+      text {
+        font-family: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 13.5px;
+        letter-spacing: -0.2px;
+      }
+
+      /* Global Timeline: 12 seconds total */
+      @keyframes typeCommand {
+        0%, 3% { opacity: 0; width: 0; }
+        5%, 95% { opacity: 1; }
+        98%, 100% { opacity: 0; }
+      }
+
+      @keyframes blinkCursor {
+        0%, 49% { opacity: 1; }
+        50%, 100% { opacity: 0; }
+      }
+
+      @keyframes fadeInStep1 {
+        0%, 10% { opacity: 0; transform: translateY(6px); }
+        15%, 92% { opacity: 1; transform: translateY(0); }
+        97%, 100% { opacity: 0; }
+      }
+
+      @keyframes fadeInStep2 {
+        0%, 22% { opacity: 0; transform: translateY(6px); }
+        27%, 92% { opacity: 1; transform: translateY(0); }
+        97%, 100% { opacity: 0; }
+      }
+
+      @keyframes fadeInStep3 {
+        0%, 40% { opacity: 0; transform: translateY(6px); }
+        45%, 92% { opacity: 1; transform: translateY(0); }
+        97%, 100% { opacity: 0; }
+      }
+
+      @keyframes fadeInScore {
+        0%, 55% { opacity: 0; transform: scale(0.98); }
+        60%, 92% { opacity: 1; transform: scale(1); }
+        97%, 100% { opacity: 0; }
+      }
+
+      @keyframes fadeInFixes {
+        0%, 70% { opacity: 0; transform: translateY(6px); }
+        75%, 92% { opacity: 1; transform: translateY(0); }
+        97%, 100% { opacity: 0; }
+      }
+
+      @keyframes glowPulse {
+        0%, 100% { stroke-opacity: 0.4; }
+        50% { stroke-opacity: 0.9; }
+      }
+
+      .cursor { animation: blinkCursor 0.8s infinite; }
+      .anim-cmd { animation: typeCommand 12s ease-in-out infinite; }
+      .anim-step1 { animation: fadeInStep1 12s ease-out infinite; }
+      .anim-step2 { animation: fadeInStep2 12s ease-out infinite; }
+      .anim-step3 { animation: fadeInStep3 12s ease-out infinite; }
+      .anim-score { animation: fadeInScore 12s cubic-bezier(0.16, 1, 0.3, 1) infinite; transform-origin: 470px 420px; }
+      .anim-fixes { animation: fadeInFixes 12s ease-out infinite; }
+      .score-border { animation: glowPulse 2.5s infinite; }
+    </style>
+
+    <linearGradient id="termBg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0B0F19" />
+      <stop offset="100%" stop-color="#030712" />
+    </linearGradient>
+
+    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1E293B" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#0F172A" stop-opacity="0.8" />
+    </linearGradient>
+
+    <linearGradient id="scoreBorderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10B981" />
+      <stop offset="50%" stop-color="#06B6D4" />
+      <stop offset="100%" stop-color="#3B82F6" />
+    </linearGradient>
+
+    <filter id="cardShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#000000" flood-opacity="0.6" />
+    </filter>
+  </defs>
+
+  <!-- Outer Window Container with Drop Shadow -->
+  <rect x="20" y="20" width="900" height="580" rx="16" fill="url(#termBg)" stroke="#1E293B" stroke-width="1.5" filter="url(#cardShadow)" />
+
+  <!-- Window Titlebar -->
+  <path d="M 20 36 C 20 27.16 27.16 20 36 20 L 904 20 C 912.84 20 920 27.16 920 36 L 920 62 L 20 62 Z" fill="url(#headerGrad)" />
+  <line x1="20" y1="62" x2="920" y2="62" stroke="#1E293B" stroke-width="1" />
+
+  <!-- Window Action Buttons (macOS style) -->
+  <circle cx="46" cy="41" r="6.5" fill="#EF4444" />
+  <circle cx="68" cy="41" r="6.5" fill="#F59E0B" />
+  <circle cx="90" cy="41" r="6.5" fill="#10B981" />
+
+  <!-- Terminal Title & Git Badge -->
+  <text x="470" y="45" fill="#94A3B8" font-size="12.5" font-weight="500" text-anchor="middle">py_doctor · diagnostic inspection</text>
+  <rect x="806" y="32" width="94" height="19" rx="9.5" fill="#1E293B" />
+  <text x="853" y="45" fill="#38BDF8" font-size="11" font-weight="600" text-anchor="middle">git:(main)</text>
+
+  <!-- Terminal Content Area -->
+  <g transform="translate(50, 75)">
+
+    <!-- Command Prompt Line -->
+    <g class="anim-cmd">
+      <text x="0" y="25" fill="#10B981" font-weight="700">❯</text>
+      <text x="20" y="25" fill="#F8FAFC" font-weight="600">py_doctor . --verbose</text>
+      <rect class="cursor" x="222" y="12" width="8" height="15" fill="#38BDF8" />
+    </g>
+
+    <!-- Step 1: Detection Output -->
+    <g class="anim-step1" transform="translate(0, 52)">
+      <text x="0" y="0" fill="#94A3B8">Detecting project...</text>
+      <text x="0" y="20" fill="#10B981">✓</text>
+      <text x="18" y="20" fill="#E2E8F0">Python 3.12.3  ·  FastAPI 0.110.0  ·  SQLAlchemy 2.0.25</text>
+      <text x="0" y="38" fill="#10B981">✓</text>
+      <text x="18" y="38" fill="#E2E8F0">Alembic detected  ·  structlog detected  ·  34 source files</text>
+      <text x="0" y="58" fill="#06B6D4">✓</text>
+      <text x="18" y="58" fill="#38BDF8" font-weight="500">Analysis complete (0.34s)</text>
+    </g>
+
+    <!-- Step 2: Errors Section -->
+    <g class="anim-step2" transform="translate(0, 136)">
+      <line x1="0" y1="0" x2="840" y2="0" stroke="#1E293B" stroke-width="1" />
+      <text x="0" y="22" fill="#F87171" font-weight="700">ERRORS (2)</text>
+
+      <!-- Error 1 -->
+      <rect x="0" y="32" width="44" height="18" rx="4" fill="#450A0A" />
+      <text x="7" y="45" fill="#EF4444" font-size="11.5" font-weight="700">ERR</text>
+      <text x="56" y="45" fill="#FCA5A5" font-weight="600">fastapi/missing-await</text>
+      <text x="320" y="45" fill="#64748B">app/routes/users.py:42</text>
+      <text x="56" y="62" fill="#94A3B8" font-size="12">db.execute() called without await — returns coroutine not result</text>
+
+      <!-- Error 2 -->
+      <rect x="0" y="74" width="44" height="18" rx="4" fill="#450A0A" />
+      <text x="7" y="87" fill="#EF4444" font-size="11.5" font-weight="700">ERR</text>
+      <text x="56" y="87" fill="#FCA5A5" font-weight="600">fastapi/hardcoded-secret</text>
+      <text x="320" y="87" fill="#64748B">app/core/config.py:7</text>
+      <text x="56" y="104" fill="#94A3B8" font-size="12">SECRET_KEY hardcoded in source — load from environment</text>
+    </g>
+
+    <!-- Step 3: Warnings & Dead Code Section -->
+    <g class="anim-step3" transform="translate(0, 260)">
+      <text x="0" y="0" fill="#FBBF24" font-weight="700">WARNINGS (1)</text>
+
+      <rect x="0" y="10" width="50" height="18" rx="4" fill="#451A03" />
+      <text x="6" y="23" fill="#F59E0B" font-size="11.5" font-weight="700">WARN</text>
+      <text x="62" y="23" fill="#FDE68A" font-weight="600">fastapi/missing-response-model</text>
+      <text x="360" y="23" fill="#64748B">app/routes/users.py:15</text>
+      <text x="62" y="40" fill="#94A3B8" font-size="12">Route missing response_model — may leak internal database attributes</text>
+    </g>
+
+    <!-- Step 4: Health Score Banner -->
+    <g class="anim-score" transform="translate(0, 320)">
+      <!-- Card Frame -->
+      <rect class="score-border" x="0" y="0" width="840" height="74" rx="10" fill="#0F172A" stroke="url(#scoreBorderGrad)" stroke-width="1.8" />
+
+      <!-- Big Number & Title -->
+      <text x="30" y="47" fill="#10B981" font-size="34" font-weight="800">71</text>
+      <text x="82" y="34" fill="#64748B" font-size="12" font-weight="700">/ 100</text>
+      <text x="135" y="35" fill="#F8FAFC" font-size="14" font-weight="700">HEALTH SCORE</text>
+
+      <!-- Progress Meter -->
+      <rect x="135" y="44" width="220" height="7" rx="3.5" fill="#1E293B" />
+      <rect x="135" y="44" width="156" height="7" rx="3.5" fill="url(#scoreBorderGrad)" />
+
+      <!-- Breakdown Badges -->
+      <rect x="380" y="26" width="94" height="24" rx="12" fill="#78350F" fill-opacity="0.4" stroke="#F59E0B" stroke-width="1" />
+      <text x="427" y="42" fill="#FBBF24" font-size="12" font-weight="600" text-anchor="middle">Needs work</text>
+
+      <text x="500" y="42" fill="#94A3B8" font-size="12.5">2 errors  ·  1 warning  ·  34 files inspected</text>
+    </g>
+
+    <!-- Step 5: Priority Fixes & Output -->
+    <g class="anim-fixes" transform="translate(0, 416)">
+      <text x="0" y="0" fill="#E2E8F0" font-weight="600">Top priority fixes:</text>
+      <text x="0" y="18" fill="#38BDF8">→ Fix fastapi/missing-await:</text>
+      <text x="235" y="18" fill="#F8FAFC">await db.execute(...)</text>
+      <text x="0" y="35" fill="#38BDF8">→ Fix fastapi/hardcoded-secret:</text>
+      <text x="250" y="35" fill="#F8FAFC">os.getenv("SECRET_KEY")</text>
+
+      <text x="0" y="65" fill="#10B981" font-weight="600">📄 NEEDEDFIX.md generated for AI agent auto-fix</text>
+    </g>
+
+  </g>
+</svg>
