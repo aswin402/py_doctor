@@ -33,6 +33,7 @@ PYDANTIC_BASE_NAMES = {
     "BaseModel",
     "Model",
     "BaseSettings",
+    "RootModel",
 }
 
 
@@ -58,9 +59,13 @@ def is_pydantic_model(node: ast.AST) -> bool:
     if not isinstance(node, ast.ClassDef):
         return False
     for base in node.bases:
-        if isinstance(base, ast.Name) and base.id in PYDANTIC_BASE_NAMES:
+        if isinstance(base, ast.Name) and (
+            base.id in PYDANTIC_BASE_NAMES or base.id.endswith(("Model", "Schema", "Settings"))
+        ):
             return True
-        if isinstance(base, ast.Attribute) and base.attr in PYDANTIC_BASE_NAMES:
+        if isinstance(base, ast.Attribute) and (
+            base.attr in PYDANTIC_BASE_NAMES or base.attr.endswith(("Model", "Schema", "Settings"))
+        ):
             return True
     return False
 
@@ -70,9 +75,20 @@ def is_db_caller(node: Optional[ast.AST]) -> bool:
     if node is None:
         return False
     if isinstance(node, ast.Name):
-        return node.id.lower() in DB_CALLER_NAMES
+        name_lower = node.id.lower()
+        return (
+            name_lower in DB_CALLER_NAMES
+            or name_lower.endswith(("_session", "_db", "_conn"))
+            or name_lower.startswith(("db_", "session_"))
+        )
     if isinstance(node, ast.Attribute):
-        return node.attr.lower() in DB_CALLER_NAMES or is_db_caller(node.value)
+        attr_lower = node.attr.lower()
+        return (
+            attr_lower in DB_CALLER_NAMES
+            or attr_lower.endswith(("_session", "_db", "_conn"))
+            or attr_lower.startswith(("db_", "session_"))
+            or is_db_caller(node.value)
+        )
     return False
 
 

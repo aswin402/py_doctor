@@ -17,7 +17,7 @@ from py_doctor.config import Config
 from py_doctor.reporter import Reporter
 from py_doctor.scorer import calculate_score, categorize_issues
 
-__version__ = "2.0.3"
+__version__ = "2.0.4"
 __author__ = "aswin"
 __description__ = "Diagnose and fix your FastAPI project health"
 

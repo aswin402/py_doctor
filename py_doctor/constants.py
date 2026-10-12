@@ -82,6 +82,7 @@ CRITICAL_RULES = [
     "async/missing-await",
     "fastapi/sync-in-async-route",
     "async/blocking-io",
+    "fastapi/background-task-db-session",
 ]
 
 SECURITY_RULES = [

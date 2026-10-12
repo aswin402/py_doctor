@@ -11,17 +11,21 @@ from py_doctor.rules.database_rules import (
     TransactionManagementRule,
 )
 from py_doctor.rules.fastapi_rules import (
+    BackgroundTaskDBSessionRule,
     BareExceptSwallowRule,
     HardcodedSecretRule,
     InsecureCORSRule,
     InvalidRoutePathRule,
     MissingResponseModelRule,
     MutableDefaultArgumentRule,
+    Status204WithBodyRule,
     SyncInAsyncRouteRule,
 )
 from py_doctor.rules.pydantic_rules import (
     MissingFieldDefaultsRule,
     MissingValidatorRule,
+    PydanticV1DumpRule,
+    PydanticV1ValidatorRule,
     UnsafeFieldRule,
 )
 from py_doctor.rules.sqlalchemy_rules import (
@@ -554,6 +558,196 @@ class UserCreate(BaseModel):
         diags = parse_and_check(MissingFieldDefaultsRule, model_code)
         self.assertEqual(len(diags), 2)
         self.assertEqual(diags[0]["rule"], "pydantic/missing-field-defaults")
+
+    def test_background_task_db_session(self):
+        # Passing request-scoped db session to background task should be flagged
+        bad_code_1 = """
+@app.post("/users")
+def create_user(user_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    background_tasks.add_task(send_welcome_email, db, user_id)
+"""
+        diags = parse_and_check(BackgroundTaskDBSessionRule, bad_code_1)
+        self.assertEqual(len(diags), 1)
+        self.assertEqual(diags[0]["rule"], "fastapi/background-task-db-session")
+        self.assertEqual(diags[0]["type"], "ERR")
+        self.assertIn("session", diags[0]["suggestion"])
+
+        # Passing keyword arg session=db
+        bad_code_2 = """
+@app.post("/audit")
+def audit_event(event_id: str, bg: BackgroundTasks, session: Session = Depends(get_db)):
+    bg.add_task(record_audit, event_id=event_id, db=session)
+"""
+        diags2 = parse_and_check(BackgroundTaskDBSessionRule, bad_code_2)
+        self.assertEqual(len(diags2), 1)
+        self.assertEqual(diags2[0]["rule"], "fastapi/background-task-db-session")
+
+        # Passing non-DB arguments to background task should NOT be flagged
+        good_code = """
+@app.post("/users")
+def create_user(user_id: int, background_tasks: BackgroundTasks):
+    background_tasks.add_task(send_welcome_email, user_id, email="test@example.com")
+"""
+        self.assertEqual(len(parse_and_check(BackgroundTaskDBSessionRule, good_code)), 0)
+
+    def test_status_204_with_body(self):
+        # 204 route with response_model should be flagged
+        bad_resp_model = """
+@app.delete("/items/{item_id}", status_code=204, response_model=ItemSchema)
+def delete_item(item_id: int):
+    return None
+"""
+        diags = parse_and_check(Status204WithBodyRule, bad_resp_model)
+        self.assertEqual(len(diags), 1)
+        self.assertEqual(diags[0]["rule"], "fastapi/status-204-with-body")
+        self.assertIn("response_model", diags[0]["description"])
+
+        # 204 route returning a payload body should be flagged
+        bad_body = """
+@app.delete("/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_item(item_id: int):
+    return {"message": "item deleted"}
+"""
+        diags2 = parse_and_check(Status204WithBodyRule, bad_body)
+        self.assertEqual(len(diags2), 1)
+        self.assertEqual(diags2[0]["rule"], "fastapi/status-204-with-body")
+        self.assertIn("returns a response body", diags2[0]["description"])
+
+        # 204 route returning None or Response should NOT be flagged
+        good_none = """
+@app.delete("/items/{item_id}", status_code=204)
+def delete_item(item_id: int):
+    # do cleanup
+    return None
+"""
+        self.assertEqual(len(parse_and_check(Status204WithBodyRule, good_none)), 0)
+
+        good_response = """
+@app.delete("/items/{item_id}", status_code=204)
+def delete_item(item_id: int):
+    return Response(status_code=204)
+"""
+        self.assertEqual(len(parse_and_check(Status204WithBodyRule, good_response)), 0)
+
+        # Non-204 route returning a body should NOT be flagged by this rule
+        good_200 = """
+@app.get("/items/{item_id}", status_code=200, response_model=ItemSchema)
+def get_item(item_id: int):
+    return {"id": item_id}
+"""
+        self.assertEqual(len(parse_and_check(Status204WithBodyRule, good_200)), 0)
+
+    def test_pydantic_v1_deprecated_validator(self):
+        # @validator on BaseModel should be flagged
+        code_validator = """
+from pydantic import BaseModel, validator
+
+class UserModel(BaseModel):
+    name: str
+
+    @validator("name")
+    def name_must_not_be_empty(cls, v):
+        if not v:
+            raise ValueError("empty")
+        return v
+"""
+        diags = parse_and_check(PydanticV1ValidatorRule, code_validator)
+        self.assertEqual(len(diags), 1)
+        self.assertEqual(diags[0]["rule"], "pydantic/v1-deprecated-validator")
+        self.assertIn("@field_validator", diags[0]["suggestion"])
+
+        # @root_validator on BaseModel should be flagged
+        code_root_validator = """
+from pydantic import BaseModel, root_validator
+
+class ConfigModel(BaseModel):
+    a: int
+    b: int
+
+    @root_validator
+    def check_values(cls, values):
+        return values
+"""
+        diags2 = parse_and_check(PydanticV1ValidatorRule, code_root_validator)
+        self.assertEqual(len(diags2), 1)
+        self.assertEqual(diags2[0]["rule"], "pydantic/v1-deprecated-validator")
+        self.assertIn("@model_validator", diags2[0]["suggestion"])
+
+        # Pydantic v2 modern validators should NOT be flagged
+        modern_code = """
+from pydantic import BaseModel, field_validator, model_validator
+
+class ModernModel(BaseModel):
+    name: str
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        return v.strip()
+
+    @model_validator(mode="after")
+    def validate_model(self):
+        return self
+"""
+        self.assertEqual(len(parse_and_check(PydanticV1ValidatorRule, modern_code)), 0)
+
+    def test_pydantic_v1_deprecated_dump(self):
+        # .dict(exclude_unset=True) with pydantic keyword argument should be flagged
+        code_with_kwargs = """
+from pydantic import BaseModel
+
+class User(BaseModel):
+    id: int
+
+def export(user: User):
+    return user.dict(exclude_unset=True)
+"""
+        diags = parse_and_check(PydanticV1DumpRule, code_with_kwargs)
+        self.assertEqual(len(diags), 1)
+        self.assertEqual(diags[0]["rule"], "pydantic/v1-deprecated-dump")
+        self.assertIn(".model_dump()", diags[0]["description"])
+
+        # self.dict() inside a Pydantic model should be flagged
+        code_self_dict = """
+from pydantic import BaseModel
+
+class User(BaseModel):
+    name: str
+
+    def to_dict(self):
+        return self.dict()
+"""
+        diags2 = parse_and_check(PydanticV1DumpRule, code_self_dict)
+        self.assertEqual(len(diags2), 1)
+        self.assertEqual(diags2[0]["rule"], "pydantic/v1-deprecated-dump")
+
+        # user.dict() on typed parameter should be flagged
+        code_param_dict = """
+from pydantic import BaseModel
+
+def save_user(user: UserModel):
+    data = user.dict()
+"""
+        diags3 = parse_and_check(PydanticV1DumpRule, code_param_dict)
+        self.assertEqual(len(diags3), 1)
+        self.assertEqual(diags3[0]["rule"], "pydantic/v1-deprecated-dump")
+
+        # Modern .model_dump() should NOT be flagged
+        modern_dump = """
+from pydantic import BaseModel
+
+def save_user(user: UserModel):
+    data = user.model_dump(exclude_unset=True)
+"""
+        self.assertEqual(len(parse_and_check(PydanticV1DumpRule, modern_dump)), 0)
+
+        # Standard dictionary should NOT be flagged
+        std_dict = """
+my_map = {"a": 1, "b": 2}
+val = my_map.get("a")
+items = my_map.items()
+"""
+        self.assertEqual(len(parse_and_check(PydanticV1DumpRule, std_dict)), 0)
 
 
 if __name__ == "__main__":

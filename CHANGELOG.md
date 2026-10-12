@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.0.4 (2026-10-13)
+
+### New Diagnostic Rules (FastAPI & Pydantic v2 Anti-Patterns)
+- **`fastapi/background-task-db-session` (ERR)**:
+  - Detects request-scoped database sessions or connections (`db`, `session`, `conn`, `SessionLocal()`) passed into `BackgroundTasks.add_task()`.
+  - Prevents production connection pool leaks and `sqlalchemy.exc.ResourceClosedError` crashes caused by accessing request-scoped sessions after HTTP response termination.
+  - Added to `CRITICAL_RULES` with high penalty scoring.
+- **`fastapi/status-204-with-body` (WARN)**:
+  - Detects routes specifying `status_code=204` or `status.HTTP_204_NO_CONTENT` that declare a `response_model` or return a response body (violating RFC 9110 Section 6.3.5).
+  - Recommends returning `None` or `fastapi.Response(status_code=status.HTTP_204_NO_CONTENT)`.
+- **`pydantic/v1-deprecated-validator` (WARN)**:
+  - Detects deprecated Pydantic v1 `@validator` and `@root_validator` decorators in Pydantic models.
+  - Recommends modern Pydantic v2 `@field_validator` and `@model_validator(mode=...)`.
+- **`pydantic/v1-deprecated-dump` (WARN)**:
+  - Detects deprecated Pydantic v1 `.dict(...)` serialization method calls on Pydantic models.
+  - Accurately distinguishes Pydantic calls from benign standard dictionary methods via keyword arguments (`exclude_unset`, `by_alias`, `exclude`, `include`, `mode`), model class context (`self.dict()`), and model-typed parameter annotations.
+  - Recommends migrating to `.model_dump(...)`.
+
+### Improvements & Enhancements
+- **Enhanced AST Recognition**:
+  - Expanded `is_pydantic_model()` in `ast_utils.py` to recognize Pydantic v2 `RootModel` as well as class bases ending with `Model`, `Schema`, and `Settings`.
+  - Broadened `is_db_caller()` in `ast_utils.py` to match variables with `_session`, `_db`, `_conn` suffixes and `db_`, `session_` prefixes.
+
+### Testing & Verification
+- Added 4 comprehensive test suites in `tests/test_rules.py` covering positive anti-pattern detection, edge cases, and zero false positives for all new rules.
+- Test suite expanded to 52 passing tests with 100% pass rate.
+- 0 Ruff errors, 0 Mypy type errors across 29 source files.
+
 ## 2.0.3 (2026-10-12)
 
 ### Performance & Engine Upgrades
