@@ -14,10 +14,11 @@ from py_doctor.analyzer.lint_runner import LintRunner
 from py_doctor.analyzer.project_detector import ProjectDetector
 from py_doctor.analyzer.type_runner import TypeRunner
 from py_doctor.config import Config
+from py_doctor.fixer import ProjectFixer
 from py_doctor.reporter import Reporter
 from py_doctor.scorer import calculate_score, categorize_issues
 
-__version__ = "2.0.4"
+__version__ = "2.0.5"
 __author__ = "aswin"
 __description__ = "Diagnose and fix your FastAPI project health"
 
@@ -144,15 +145,26 @@ async def run(args: argparse.Namespace) -> None:
 
     # Auto-fix stage
     if fix_opt:
+        fixer = ProjectFixer(project_path, config.ignore_files)
         if not is_quiet_mode:
-            with console.status("[bold yellow]Applying automatic fixes...[/bold yellow]"):
+            with console.status(
+                "[bold yellow]Applying automatic fixes (Ruff + py_doctor AST rules)...[/bold yellow]"
+            ):
                 await asyncio.to_thread(
                     subprocess.run,
                     ["ruff", "check", project_path, "--fix", "--quiet"],
                     capture_output=True,
                     check=False,
                 )
-            console.print("[bold green]✓[/bold green] Auto-fixes applied\n")
+                fix_stats = await asyncio.to_thread(fixer.fix_all)
+            custom_count = (
+                fix_stats["fixed_route_paths"]
+                + fix_stats["fixed_validators"]
+                + fix_stats["fixed_dumps"]
+            )
+            console.print(
+                f"[bold green]✓[/bold green] Auto-fixes applied (Ruff lints + {custom_count} custom rules across {fix_stats['total_files_modified']} files)\n"
+            )
         else:
             await asyncio.to_thread(
                 subprocess.run,
@@ -160,6 +172,7 @@ async def run(args: argparse.Namespace) -> None:
                 capture_output=True,
                 check=False,
             )
+            await asyncio.to_thread(fixer.fix_all)
 
     # Analysis stage
     if not is_quiet_mode:

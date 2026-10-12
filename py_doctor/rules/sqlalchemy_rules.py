@@ -103,6 +103,9 @@ class NPlusOneQueryRule(BaseRule):
 
     @classmethod
     def check(cls, tree: ast.Module, source: str, rel_path: str) -> list[dict[str, Any]]:
+        if "for " not in source and "while " not in source:
+            return []
+
         diagnostics: list[dict[str, Any]] = []
         for node in ast.walk(tree):
             if (

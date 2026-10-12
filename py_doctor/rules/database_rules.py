@@ -197,6 +197,15 @@ class SlowQueryDetectionRule(BaseRule):
 
     @classmethod
     def check(cls, tree: ast.Module, source: str, rel_path: str) -> list[dict[str, Any]]:
+        src_lower = source.lower()
+        if (
+            "select" not in src_lower
+            and "query" not in src_lower
+            and "fetch" not in src_lower
+            and "all()" not in src_lower
+        ):
+            return []
+
         annotate_parents(tree)
 
         diagnostics: list[dict[str, Any]] = []
@@ -206,6 +215,25 @@ class SlowQueryDetectionRule(BaseRule):
                 # Only check the outermost call in an expression or assignment to avoid duplicate alerts on sub-calls
                 if isinstance(parent, (ast.Attribute, ast.Call)):
                     continue
+
+                # Fast AST-level gate before invoking expensive get_source_segment
+                fn = node.func
+                is_candidate = (isinstance(fn, ast.Name) and fn.id.lower() == "select") or (
+                    isinstance(fn, ast.Attribute)
+                    and fn.attr
+                    in (
+                        "all",
+                        "fetch",
+                        "fetchall",
+                        "select",
+                        "scalars",
+                        "execute",
+                    )
+                )
+
+                if not is_candidate:
+                    continue
+
                 segment = ast.get_source_segment(source, node)
                 if not segment:
                     continue
@@ -260,6 +288,9 @@ class NPlusOneQueryRule(BaseRule):
 
     @classmethod
     def check(cls, tree: ast.Module, source: str, rel_path: str) -> list[dict[str, Any]]:
+        if "for " not in source and "while " not in source:
+            return []
+
         diagnostics: list[dict[str, Any]] = []
         for node in ast.walk(tree):
             if isinstance(node, (ast.For, ast.AsyncFor, ast.While)):

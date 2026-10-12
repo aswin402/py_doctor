@@ -24,6 +24,7 @@ DEFAULT_SKIP_DIRS = {
     ".eggs",
     "py_doctor.egg-info",
     ".git",
+    ".pydoctor_cache",
 }
 
 # Used by CLI tools like ruff

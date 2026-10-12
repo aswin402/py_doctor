@@ -10,3 +10,4 @@ build/
 dist/
 *.egg-info/
 NEEDEDFIX.md
+.pydoctor_cache/
