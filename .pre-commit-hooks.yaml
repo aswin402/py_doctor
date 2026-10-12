@@ -1,0 +1,8 @@
+- id: py-doctor
+  name: py_doctor
+  description: Diagnose and enforce health scoring on your FastAPI project
+  entry: py_doctor
+  language: python
+  types: [python]
+  pass_filenames: false
+  args: [".", "--diff", "HEAD", "--no-md"]

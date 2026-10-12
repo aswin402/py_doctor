@@ -32,8 +32,8 @@ DEFAULT_EXCLUDE_DIRS_STR = ",".join(DEFAULT_SKIP_DIRS)
 # Used by Vulture
 VULTURE_EXCLUDE_DIRS = ",".join(f"*{d}*" for d in DEFAULT_SKIP_DIRS)
 
-# Aggressive Ruff rules: Flake8, Bugbear, Comprehensions, Pyupgrade, Simplify, Bandit, Return, Unused Args, Eradicate
-RUFF_SELECT_FLAGS = "E,F,W,I,B,C4,UP,SIM,RUF,S,PT,RET,ARG,ERA"
+# Aggressive Ruff rules: Flake8, Bugbear, Comprehensions, Pyupgrade, Simplify, Bandit, Return, Unused Args, Eradicate, Async
+RUFF_SELECT_FLAGS = "E,F,W,I,B,C4,UP,SIM,RUF,S,PT,RET,ARG,ERA,ASYNC"
 
 SECRET_PATTERNS = (
     "SECRET",
