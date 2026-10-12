@@ -1,11 +1,18 @@
+import asyncio
 import html
 import os
 from datetime import date
+from typing import Any
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+
+
+def _write_text_file(path: str, content: str) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
 
 
 class Reporter:
@@ -15,7 +22,16 @@ class Reporter:
         self.console = Console()
 
     async def generate_report(
-        self, diagnostics, detector, score, errors, warnings, dead_code, file_count, threshold=75, project_path="."
+        self,
+        diagnostics,
+        detector,
+        score,
+        errors,
+        warnings,
+        dead_code,
+        file_count,
+        threshold=75,
+        project_path=".",
     ):
         self._print_command(project_path)
         self._print_detection(detector)
@@ -90,15 +106,17 @@ class Reporter:
         loc = f"[dim]{d.get('location', '')}[/dim]"
 
         # Calculate padding to right-align the location
-        rule_len = len(d['rule'])
-        loc_len = len(d.get('location', ''))
+        rule_len = len(d["rule"])
+        loc_len = len(d.get("location", ""))
         pad = max(2, 76 - 6 - rule_len - loc_len)
 
         self.console.print(f"{tag}  {rule}{' ' * pad}{loc}")
         if self.verbose and d.get("description"):
             self.console.print(f"       [dim]{d['description']}[/dim]")
         if self.verbose and d.get("suggestion"):
-            self.console.print(f"       [italic green]↳ Suggestion: {d['suggestion']}[/italic green]")
+            self.console.print(
+                f"       [italic green]↳ Suggestion: {d['suggestion']}[/italic green]"
+            )
         self.console.print()
 
     def _print_dead_code_diagnostics(self, diagnostics):
@@ -118,7 +136,13 @@ class Reporter:
     def _print_health_score(self, score, errors, warnings, dead_code, file_count, threshold):
         mid_threshold = max(0, threshold - 25)
         color = "green" if score >= threshold else "yellow" if score >= mid_threshold else "red"
-        label = "Great" if score >= threshold else "Needs work" if score >= mid_threshold else "Critical"
+        label = (
+            "Great"
+            if score >= threshold
+            else "Needs work"
+            if score >= mid_threshold
+            else "Critical"
+        )
 
         filled = round(score / 100 * 48)
         empty = 48 - filled
@@ -151,26 +175,44 @@ class Reporter:
                 loc_str = f": [dim]{loc}[/dim]" if loc else ""
                 self.console.print(f"  [red]→[/red] Fix [cyan]{d['rule']}[/cyan]{loc_str}")
                 if d.get("suggestion"):
-                    self.console.print(f"    [italic green]↳ Suggestion: {d['suggestion']}[/italic green]")
+                    self.console.print(
+                        f"    [italic green]↳ Suggestion: {d['suggestion']}[/italic green]"
+                    )
                 elif d.get("description"):
                     self.console.print(f"    [dim]↳ Cause: {d['description']}[/dim]")
         else:
             self.console.print("  [bold green]✓ No errors found![/bold green]")
         self.console.print()
 
-
-    def _print_footer(self):
-        self.console.print("Run [cyan]py_doctor . --fix[/cyan] to auto-fix with AI · [cyan]--diff main[/cyan] for PR mode")
+    def _print_footer(self) -> None:
+        self.console.print(
+            "Run [cyan]py_doctor . --fix[/cyan] to auto-fix with AI · [cyan]--diff main[/cyan] for PR mode"
+        )
 
     async def generate_markdown_report(
-        self, project_path, diagnostics, detector, score, errors, warnings, dead_code, file_count, threshold=75
-    ):
-        buf = []
+        self,
+        project_path: str,
+        diagnostics: list[dict[str, Any]],
+        detector: Any,
+        score: int,
+        errors: int,
+        warnings: int,
+        dead_code: int,
+        file_count: int,
+        threshold: int = 75,
+    ) -> None:
+        buf: list[str] = []
         w = buf.append
         today = date.today().strftime("%Y-%m-%d")
 
         mid_threshold = max(0, threshold - 25)
-        label = "Great" if score >= threshold else "Needs work" if score >= mid_threshold else "Critical"
+        label = (
+            "Great"
+            if score >= threshold
+            else "Needs work"
+            if score >= mid_threshold
+            else "Critical"
+        )
 
         w("# py_doctor Report")
         w("")
@@ -273,8 +315,7 @@ class Reporter:
         w("")
 
         output_path = os.path.join(project_path, "NEEDEDFIX.md")
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(buf))
+        await asyncio.to_thread(_write_text_file, output_path, "\n".join(buf))
 
     async def generate_html_report(
         self,
@@ -290,19 +331,37 @@ class Reporter:
     ) -> str:
         today = date.today().strftime("%Y-%m-%d")
         mid_threshold = max(0, threshold - 25)
-        color = "#10b981" if score >= threshold else "#f59e0b" if score >= mid_threshold else "#ef4444"
-        label = "Great" if score >= threshold else "Needs work" if score >= mid_threshold else "Critical"
+        color = (
+            "#10b981" if score >= threshold else "#f59e0b" if score >= mid_threshold else "#ef4444"
+        )
+        label = (
+            "Great"
+            if score >= threshold
+            else "Needs work"
+            if score >= mid_threshold
+            else "Critical"
+        )
 
         rows = []
         for d in diagnostics:
             sev = d.get("type", "INFO")
-            sev_class = "err" if sev == "ERR" else "warn" if sev == "WARN" else "dead" if sev == "DEAD" else "info"
+            sev_class = (
+                "err"
+                if sev == "ERR"
+                else "warn"
+                if sev == "WARN"
+                else "dead"
+                if sev == "DEAD"
+                else "info"
+            )
             rule = html.escape(str(d.get("rule", "")))
             loc = html.escape(str(d.get("location", "")))
             desc = html.escape(str(d.get("description", "")))
             sugg = html.escape(str(d.get("suggestion", "")))
 
-            sugg_html = f'<div class="suggestion"><strong>Suggestion:</strong> {sugg}</div>' if sugg else ""
+            sugg_html = (
+                f'<div class="suggestion"><strong>Suggestion:</strong> {sugg}</div>' if sugg else ""
+            )
 
             rows.append(f"""
             <div class="card issue-card {sev_class}">
@@ -318,11 +377,19 @@ class Reporter:
             </div>
             """)
 
-        cards_html = "\n".join(rows) if rows else '<div class="card"><p class="empty-state">No issues detected! Excellent code health.</p></div>'
+        cards_html = (
+            "\n".join(rows)
+            if rows
+            else '<div class="card"><p class="empty-state">No issues detected! Excellent code health.</p></div>'
+        )
 
         py_ver = html.escape(str(getattr(detector, "python_version", "unknown")))
-        fa_ver = html.escape(str(getattr(detector, "fastapi_version", "not installed") or "not installed"))
-        sa_ver = html.escape(str(getattr(detector, "sqlalchemy_version", "not installed") or "not installed"))
+        fa_ver = html.escape(
+            str(getattr(detector, "fastapi_version", "not installed") or "not installed")
+        )
+        sa_ver = html.escape(
+            str(getattr(detector, "sqlalchemy_version", "not installed") or "not installed")
+        )
 
         html_content = f"""<!DOCTYPE html>
 <html lang="en">
@@ -497,8 +564,6 @@ function filterType(type, btn) {{
 </body>
 </html>
 """
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(html_content)
+        await asyncio.to_thread(_write_text_file, output_path, html_content)
 
         return html_content
-

@@ -16,6 +16,7 @@ else:
         except ImportError:
             tomllib = None
 
+
 class Config:
     def __init__(
         self,

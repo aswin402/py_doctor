@@ -31,7 +31,8 @@ class ProjectDetector:
 
     async def _detect_python_version(self) -> None:
         try:
-            result = subprocess.run(
+            result = await asyncio.to_thread(
+                subprocess.run,
                 [sys.executable, "--version"],
                 capture_output=True,
                 text=True,
@@ -44,7 +45,8 @@ class ProjectDetector:
     async def _detect_packages(self) -> None:
         package_data: Optional[list[dict[str, Any]]] = None
         try:
-            result = subprocess.run(
+            result = await asyncio.to_thread(
+                subprocess.run,
                 ["uv", "pip", "list", "--format=json"],
                 capture_output=True,
                 text=True,
@@ -58,7 +60,8 @@ class ProjectDetector:
 
         if not package_data:
             try:
-                result = subprocess.run(
+                result = await asyncio.to_thread(
+                    subprocess.run,
                     [sys.executable, "-m", "pip", "list", "--format=json"],
                     capture_output=True,
                     text=True,
@@ -107,11 +110,11 @@ class ProjectDetector:
             return
 
         if "fastapi" in content and not self.fastapi_version:
-            m = re.search(r'fastapi[>=<!\s"\']+([0-9][0-9.]*)', content)
+            m = re.search(r'fastapi[>=<!~^\s"\']+([0-9][0-9.]*)', content)
             self.fastapi_version = m.group(1) if m else "detected"
 
         if "sqlalchemy" in content and not self.sqlalchemy_version:
-            m = re.search(r'sqlalchemy[>=<!\s"\']+([0-9][0-9.]*)', content)
+            m = re.search(r'sqlalchemy[>=<!~^\s"\']+([0-9][0-9.]*)', content)
             self.sqlalchemy_version = m.group(1) if m else "detected"
 
         if "alembic" in content:

@@ -1,6 +1,7 @@
 import ast
 from typing import Any
 
+from .ast_utils import annotate_parents
 from .base_rule import BaseRule
 
 
@@ -12,11 +13,7 @@ class MissingAwaitRule(BaseRule):
     @classmethod
     def check(cls, tree: ast.Module, source: str, rel_path: str) -> list[dict[str, Any]]:
         # Ensure parent annotations exist even if check() is called standalone
-        if not getattr(tree, "_parent_annotated", False):
-            for parent in ast.walk(tree):
-                for child in ast.iter_child_nodes(parent):
-                    child.parent = parent
-            tree._parent_annotated = True
+        annotate_parents(tree)
 
         diagnostics: list[dict[str, Any]] = []
         for node in ast.walk(tree):
@@ -47,9 +44,25 @@ class MissingAwaitRule(BaseRule):
         if attr in ("get", "post", "put", "delete", "patch"):
             val = getattr(node.func, "value", None)
             if isinstance(val, ast.Name):
-                return val.id.lower() in ("client", "session", "async_session", "httpx", "http", "http_client", "db")
+                return val.id.lower() in (
+                    "client",
+                    "session",
+                    "async_session",
+                    "httpx",
+                    "http",
+                    "http_client",
+                    "db",
+                )
             if isinstance(val, ast.Attribute):
-                return val.attr.lower() in ("client", "session", "async_session", "httpx", "http", "http_client", "db")
+                return val.attr.lower() in (
+                    "client",
+                    "session",
+                    "async_session",
+                    "httpx",
+                    "http",
+                    "http_client",
+                    "db",
+                )
             return False
 
         return False
@@ -61,7 +74,12 @@ class MissingAwaitRule(BaseRule):
             return True
         if isinstance(parent, ast.Call):
             func = getattr(parent, "func", None)
-            if isinstance(func, ast.Attribute) and func.attr in ("gather", "create_task", "wait", "shield"):
+            if isinstance(func, ast.Attribute) and func.attr in (
+                "gather",
+                "create_task",
+                "wait",
+                "shield",
+            ):
                 return True
             if isinstance(func, ast.Name) and func.id in ("create_task", "gather"):
                 return True
@@ -114,9 +132,21 @@ class BlockingIOInAsyncRule(BaseRule):
         if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
             if node.func.value.id == "time" and node.func.attr == "sleep":
                 return True
-            if node.func.value.id == "requests" and node.func.attr in ("get", "post", "put", "delete", "patch", "request"):
+            if node.func.value.id == "requests" and node.func.attr in (
+                "get",
+                "post",
+                "put",
+                "delete",
+                "patch",
+                "request",
+            ):
                 return True
-            if node.func.value.id == "subprocess" and node.func.attr in ("run", "call", "check_output", "check_call"):
+            if node.func.value.id == "subprocess" and node.func.attr in (
+                "run",
+                "call",
+                "check_output",
+                "check_call",
+            ):
                 return True
         return False
 
@@ -133,4 +163,3 @@ class BlockingIOInAsyncRule(BaseRule):
                 if node.func.value.id == "subprocess":
                     return f"subprocess.{node.func.attr}() (use asyncio.create_subprocess_exec)"
         return "I/O operation"
-

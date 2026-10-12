@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import subprocess
@@ -30,14 +31,22 @@ class TypeRunner:
             ],
         ):
             try:
-                result = subprocess.run(
-                    cmd, capture_output=True, text=True, cwd=self.project_path, timeout=30
+                result = await asyncio.to_thread(
+                    subprocess.run,
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    cwd=self.project_path,
+                    timeout=30,
                 )
-                if result.stdout.strip():
+                if result is not None and result.stdout.strip():
                     break
             except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
                 continue
         else:
+            return []
+
+        if result is None or not result.stdout.strip():
             return []
 
         diagnostics: list[dict[str, Any]] = []

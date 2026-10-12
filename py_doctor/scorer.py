@@ -1,5 +1,16 @@
 from typing import Any
 
+from py_doctor.constants import (
+    CRITICAL_RULES,
+    CRITICAL_WEIGHT,
+    DEAD_CODE_WEIGHT,
+    DEPENDENCY_WEIGHT,
+    ERROR_WEIGHT,
+    SECURITY_RULES,
+    SECURITY_WEIGHT,
+    WARNING_WEIGHT,
+)
+
 
 def calculate_score(
     errors: int,
@@ -10,13 +21,6 @@ def calculate_score(
     dependency_issues: int = 0,
 ) -> int:
     """Calculate health score with weighted penalties"""
-    ERROR_WEIGHT = 3
-    WARNING_WEIGHT = 1
-    DEAD_CODE_WEIGHT = 1
-    CRITICAL_WEIGHT = 10
-    SECURITY_WEIGHT = 5
-    DEPENDENCY_WEIGHT = 15  # Vulnerable packages are a massive risk
-
     penalty = (
         errors * ERROR_WEIGHT
         + warnings * WARNING_WEIGHT
@@ -40,24 +44,6 @@ def categorize_issues(diagnostics: list[dict[str, Any]]) -> dict[str, int]:
         "dependencies": 0,
     }
 
-    critical_rules = [
-        "fastapi/hardcoded-secret",
-        "fastapi/insecure-cors",
-        "fastapi/mutable-default-argument",
-        "sqlalchemy/missing-session-close",
-        "database/connection-leak",
-        "async/missing-await",
-        "fastapi/sync-in-async-route",
-    ]
-
-    security_rules = [
-        "bandit/",
-        "ruff/S",
-        "fastapi/hardcoded-secret",
-        "fastapi/insecure-cors",
-        "pydantic/unsafe-field",
-    ]
-
     for d in diagnostics:
         issue_type = d.get("type", "")
         rule = d.get("rule", "")
@@ -69,9 +55,9 @@ def categorize_issues(diagnostics: list[dict[str, Any]]) -> dict[str, int]:
         elif issue_type == "DEAD":
             categories["dead_code"] += 1
 
-        if any(cr in rule for cr in critical_rules):
+        if any(cr in rule for cr in CRITICAL_RULES):
             categories["critical"] += 1
-        if any(sr in rule for sr in security_rules):
+        if any(sr in rule for sr in SECURITY_RULES):
             categories["security"] += 1
         if rule.startswith("audit/"):
             categories["dependencies"] += 1

@@ -1,6 +1,7 @@
 import ast
 from typing import Any
 
+from .ast_utils import annotate_parents, is_db_caller
 from .base_rule import BaseRule
 
 
@@ -23,16 +24,6 @@ class MissingConnectionPoolRule(BaseRule):
                         "suggestion": "Use create_async_pool() for asyncpg or create_engine() with pool for SQLAlchemy",
                     }
                 )
-            if cls._is_missing_pool_config(node):
-                diagnostics.append(
-                    {
-                        "type": "WARN",
-                        "rule": "database/missing-pool-config",
-                        "location": f"{rel_path}:{getattr(node, 'lineno', 1)}",
-                        "description": "Database pool not configured with optimal settings",
-                        "suggestion": "Configure pool_size=20, max_overflow=10 for production",
-                    }
-                )
         return diagnostics
 
     @staticmethod
@@ -45,13 +36,52 @@ class MissingConnectionPoolRule(BaseRule):
             and node.func.value.id == "asyncpg"
         )
 
+
+class MissingPoolConfigRule(BaseRule):
+    rule_id = "database/missing-pool-config"
+    severity = "WARN"
+    description = "Database pool not configured with optimal settings"
+
+    @classmethod
+    def check(cls, tree: ast.Module, source: str, rel_path: str) -> list[dict[str, Any]]:
+        diagnostics: list[dict[str, Any]] = []
+        for node in ast.walk(tree):
+            if cls._is_missing_pool_config(node):
+                diagnostics.append(
+                    {
+                        "type": cls.severity,
+                        "rule": cls.rule_id,
+                        "location": f"{rel_path}:{getattr(node, 'lineno', 1)}",
+                        "description": cls.description,
+                        "suggestion": "Configure pool_size=20, max_overflow=10 for production",
+                    }
+                )
+        return diagnostics
+
     @staticmethod
     def _is_missing_pool_config(node: ast.AST) -> bool:
-        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, (ast.Name, ast.Attribute))):
             return False
-        return node.func.id in ("create_async_engine", "create_engine") and not any(
-            kw.arg in ("pool_size", "max_overflow") for kw in node.keywords
-        )
+        func_name = node.func.id if isinstance(node.func, ast.Name) else node.func.attr
+        if func_name not in ("create_async_engine", "create_engine"):
+            return False
+        # SQLite does not support pool_size/max_overflow (raises ArgumentError in SQLAlchemy)
+        if (
+            node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+            and node.args[0].value.startswith("sqlite")
+        ):
+            return False
+        for kw in node.keywords:
+            if (
+                kw.arg == "url"
+                and isinstance(kw.value, ast.Constant)
+                and isinstance(kw.value.value, str)
+                and kw.value.value.startswith("sqlite")
+            ):
+                return False
+        return not any(kw.arg in ("pool_size", "max_overflow") for kw in node.keywords)
 
 
 class ConnectionLeakRule(BaseRule):
@@ -61,11 +91,7 @@ class ConnectionLeakRule(BaseRule):
 
     @classmethod
     def check(cls, tree: ast.Module, source: str, rel_path: str) -> list[dict[str, Any]]:
-        if not getattr(tree, "_parent_annotated", False):
-            for parent in ast.walk(tree):
-                for child in ast.iter_child_nodes(parent):
-                    child.parent = parent
-            tree._parent_annotated = True
+        annotate_parents(tree)
 
         diagnostics: list[dict[str, Any]] = []
         for node in ast.walk(tree):
@@ -145,13 +171,15 @@ class TransactionManagementRule(BaseRule):
                 and isinstance(child.func, ast.Attribute)
                 and child.func.attr in ("insert", "update", "delete", "execute")
             ):
-                return True
+                val = getattr(child.func, "value", None)
+                if is_db_caller(val):
+                    return True
         return False
 
     @staticmethod
     def _has_transaction(node: ast.AST) -> bool:
         for child in ast.walk(node):
-            if isinstance(child, ast.With):
+            if isinstance(child, (ast.With, ast.AsyncWith)):
                 for item in child.items:
                     if (
                         isinstance(item.context_expr, ast.Call)
@@ -169,11 +197,7 @@ class SlowQueryDetectionRule(BaseRule):
 
     @classmethod
     def check(cls, tree: ast.Module, source: str, rel_path: str) -> list[dict[str, Any]]:
-        if not getattr(tree, "_parent_annotated", False):
-            for parent in ast.walk(tree):
-                for child in ast.iter_child_nodes(parent):
-                    child.parent = parent
-            tree._parent_annotated = True
+        annotate_parents(tree)
 
         diagnostics: list[dict[str, Any]] = []
         for node in ast.walk(tree):
@@ -200,10 +224,11 @@ class SlowQueryDetectionRule(BaseRule):
     @staticmethod
     def _is_select_query(node: ast.AST, segment: str) -> bool:
         seg_lower = segment.lower()
-        if "query(" in seg_lower or "select(" in seg_lower:
+        if "select(" in seg_lower:
             return True
         if (
-            isinstance(node.func, ast.Attribute)
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
             and node.func.attr in ("all", "fetch", "fetchall")
         ):
             val = getattr(node.func, "value", None)
@@ -212,6 +237,8 @@ class SlowQueryDetectionRule(BaseRule):
                 and isinstance(getattr(val, "func", None), ast.Attribute)
                 and getattr(val.func, "attr", None) in ("query", "filter", "where")
             ):
+                return True
+            if is_db_caller(val):
                 return True
         return False
 
@@ -227,7 +254,9 @@ class SlowQueryDetectionRule(BaseRule):
 class NPlusOneQueryRule(BaseRule):
     rule_id = "database/n-plus-one-query"
     severity = "WARN"
-    description = "Database query executed inside a loop - potential N+1 query performance bottleneck"
+    description = (
+        "Database query executed inside a loop - potential N+1 query performance bottleneck"
+    )
 
     @classmethod
     def check(cls, tree: ast.Module, source: str, rel_path: str) -> list[dict[str, Any]]:
@@ -239,19 +268,16 @@ class NPlusOneQueryRule(BaseRule):
                         continue
                     if isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute):
                         attr_name = child.func.attr
-                        if attr_name in ("execute", "scalars", "scalar", "fetch", "fetchall", "fetchrow"):
+                        if attr_name in (
+                            "execute",
+                            "scalars",
+                            "scalar",
+                            "fetch",
+                            "fetchall",
+                            "fetchrow",
+                        ):
                             val = getattr(child.func, "value", None)
-                            is_db_obj = False
-                            if isinstance(val, ast.Name):
-                                if val.id in ("session", "db", "conn", "connection", "cursor", "client", "pool"):
-                                    is_db_obj = True
-                            elif isinstance(val, ast.Attribute):
-                                if val.attr in ("session", "db", "conn", "cursor"):
-                                    is_db_obj = True
-                            elif attr_name in ("fetchall", "fetchrow"):
-                                is_db_obj = True
-
-                            if is_db_obj:
+                            if is_db_caller(val) or attr_name in ("fetchall", "fetchrow"):
                                 diagnostics.append(
                                     {
                                         "type": cls.severity,

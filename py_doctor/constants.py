@@ -23,7 +23,7 @@ DEFAULT_SKIP_DIRS = {
     "eggs",
     ".eggs",
     "py_doctor.egg-info",
-    ".git"
+    ".git",
 }
 
 # Used by CLI tools like ruff
@@ -38,12 +38,56 @@ RUFF_SELECT_FLAGS = "E,F,W,I,B,C4,UP,SIM,RUF,S,PT,RET,ARG,ERA,ASYNC"
 SECRET_PATTERNS = (
     "SECRET",
     "PASSWORD",
+    "PASSWD",
     "TOKEN",
     "API_KEY",
     "PRIVATE_KEY",
     "JWT_SECRET",
     "SALT",
-    "KEY",
     "ACCESS_KEY",
     "SECRET_KEY",
+    "AUTH_KEY",
+    "ENCRYPTION_KEY",
+    "SIGNING_KEY",
 )
+
+SAFE_KEY_EXCLUSIONS = {
+    "PRIMARY_KEY",
+    "FOREIGN_KEY",
+    "CACHE_KEY",
+    "SORT_KEY",
+    "PUBLIC_KEY",
+    "PARTITION_KEY",
+    "ROUTING_KEY",
+    "DICT_KEY",
+    "ITEM_KEY",
+    "IDEMPOTENCY_KEY",
+    "SEARCH_KEY",
+}
+
+# Penalty weights for health score calculation
+ERROR_WEIGHT = 3
+WARNING_WEIGHT = 1
+DEAD_CODE_WEIGHT = 1
+CRITICAL_WEIGHT = 10
+SECURITY_WEIGHT = 5
+DEPENDENCY_WEIGHT = 15
+
+CRITICAL_RULES = [
+    "fastapi/hardcoded-secret",
+    "fastapi/insecure-cors",
+    "fastapi/mutable-default-argument",
+    "sqlalchemy/missing-session-close",
+    "database/connection-leak",
+    "async/missing-await",
+    "fastapi/sync-in-async-route",
+    "async/blocking-io",
+]
+
+SECURITY_RULES = [
+    "bandit/",
+    "ruff/S",
+    "fastapi/hardcoded-secret",
+    "fastapi/insecure-cors",
+    "pydantic/unsafe-field",
+]

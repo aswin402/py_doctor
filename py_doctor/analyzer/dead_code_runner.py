@@ -1,3 +1,4 @@
+import asyncio
 import os
 import re
 import subprocess
@@ -15,18 +16,19 @@ class DeadCodeRunner:
         result: Optional[subprocess.CompletedProcess] = None
 
         # Vulture will find unused functions, classes, and variables
-        cmd_args = [
-            self.project_path,
-            "--min-confidence", "70",
-            "--exclude", VULTURE_EXCLUDE_DIRS
-        ]
+        cmd_args = [self.project_path, "--min-confidence", "70", "--exclude", VULTURE_EXCLUDE_DIRS]
 
         for base_cmd in (["uv", "run", "vulture"], ["vulture"]):
             try:
-                result = subprocess.run(
-                    base_cmd + cmd_args, capture_output=True, text=True, cwd=self.project_path, timeout=30
+                result = await asyncio.to_thread(
+                    subprocess.run,
+                    base_cmd + cmd_args,
+                    capture_output=True,
+                    text=True,
+                    cwd=self.project_path,
+                    timeout=30,
                 )
-                if result.stdout.strip():
+                if result is not None and result.stdout.strip():
                     break
             except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
                 continue
@@ -36,8 +38,8 @@ class DeadCodeRunner:
 
         diagnostics: list[dict[str, Any]] = []
 
-        # Parse Vulture's output format: "file.py:line: message"
-        pattern = re.compile(r"^(.*?):(\d+):\s+(.*)$")
+        # Parse Vulture's output format: "file.py:line: message" (greedy to support Windows drive colons)
+        pattern = re.compile(r"^(.*):(\d+):\s*(.*)$")
 
         for line in result.stdout.splitlines():
             match = pattern.match(line.strip())
@@ -56,12 +58,14 @@ class DeadCodeRunner:
 
                 sub_type = "UNUSED IMPORT" if "import" in message else "UNUSED"
 
-                diagnostics.append({
-                    "type": "DEAD",
-                    "subType": sub_type,
-                    "location": f"{rel_path}:{line_no}",
-                    "description": message,
-                    "rule": "vulture/dead-code"
-                })
+                diagnostics.append(
+                    {
+                        "type": "DEAD",
+                        "subType": sub_type,
+                        "location": f"{rel_path}:{line_no}",
+                        "description": message,
+                        "rule": "vulture/dead-code",
+                    }
+                )
 
         return diagnostics

@@ -1,4 +1,5 @@
 import ast
+import asyncio
 import inspect
 import json
 import os
@@ -15,6 +16,7 @@ from py_doctor.rules import (
     sqlalchemy_rules,
     structlog_rules,
 )
+from py_doctor.rules.ast_utils import annotate_parents
 
 
 class LintRunner:
@@ -32,9 +34,21 @@ class LintRunner:
 
     def _load_custom_rules(self) -> None:
         try:
-            for module in [fastapi_rules, pydantic_rules, sqlalchemy_rules, structlog_rules, async_rules, database_rules]:
+            for module in [
+                fastapi_rules,
+                pydantic_rules,
+                sqlalchemy_rules,
+                structlog_rules,
+                async_rules,
+                database_rules,
+            ]:
                 for _name, obj in inspect.getmembers(module):
-                    if (inspect.isclass(obj) and issubclass(obj, base_rule.BaseRule) and obj is not base_rule.BaseRule and hasattr(obj, "check")):
+                    if (
+                        inspect.isclass(obj)
+                        and issubclass(obj, base_rule.BaseRule)
+                        and obj is not base_rule.BaseRule
+                        and hasattr(obj, "check")
+                    ):
                         self.custom_rules.append(obj)
         except Exception:
             pass
@@ -68,10 +82,15 @@ class LintRunner:
 
         for base_cmd in (["uv", "run", "ruff"], ["ruff"]):
             try:
-                result = subprocess.run(
-                    base_cmd + cmd_args, capture_output=True, text=True, cwd=self.project_path, timeout=30
+                result = await asyncio.to_thread(
+                    subprocess.run,
+                    base_cmd + cmd_args,
+                    capture_output=True,
+                    text=True,
+                    cwd=self.project_path,
+                    timeout=30,
                 )
-                if result.returncode == 0 or result.stdout.strip():
+                if result is not None and (result.returncode == 0 or result.stdout.strip()):
                     break
             except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
                 continue
@@ -107,15 +126,20 @@ class LintRunner:
             else:
                 sev = "INFO"
 
-            diagnostics.append({
-                "type": sev,
-                "rule": f"ruff/{code}",
-                "location": f"{file_path}:{row}",
-                "description": message,
-            })
+            diagnostics.append(
+                {
+                    "type": sev,
+                    "rule": f"ruff/{code}",
+                    "location": f"{file_path}:{row}",
+                    "description": message,
+                }
+            )
         return diagnostics
 
     async def _run_custom_rules(self) -> list[dict[str, Any]]:
+        return await asyncio.to_thread(self._sync_run_custom_rules)
+
+    def _sync_run_custom_rules(self) -> list[dict[str, Any]]:
         diagnostics: list[dict[str, Any]] = []
 
         for root, dirs, files in os.walk(self.project_path):
@@ -143,9 +167,7 @@ class LintRunner:
                     tree = ast.parse(source, filename=filepath)
 
                     # Annotate parent on AST nodes for rules that rely on tree context
-                    for parent in ast.walk(tree):
-                        for child in ast.iter_child_nodes(parent):
-                            child.parent = parent
+                    annotate_parents(tree)
 
                     for rule_class in self.custom_rules:
                         if skip_file and "import" in getattr(rule_class, "rule_id", ""):

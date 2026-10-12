@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import subprocess
@@ -18,25 +19,29 @@ class DependencyRunner:
         if os.path.exists(req_path):
             target_args = ["-r", req_path]
         elif os.path.exists(toml_path):
-            target_args = ["-l"] # Local environment scan if pyproject exists
+            target_args = ["-l"]  # Local environment scan if pyproject exists
         else:
-            return [] # Nothing to scan against
+            return []  # Nothing to scan against
 
         result: Optional[subprocess.CompletedProcess] = None
         for base_cmd in (["uv", "run", "pip-audit"], ["pip-audit"]):
             try:
-                result = subprocess.run(
+                result = await asyncio.to_thread(
+                    subprocess.run,
                     base_cmd + target_args + ["-f", "json"],
                     capture_output=True,
                     text=True,
                     cwd=self.project_path,
-                    timeout=45
+                    timeout=45,
                 )
-                if result.stdout.strip():
+                if result is not None and result.stdout.strip():
                     break
             except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
                 continue
         else:
+            return []
+
+        if result is None or not result.stdout.strip():
             return []
 
         try:

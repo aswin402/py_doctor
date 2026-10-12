@@ -1,11 +1,14 @@
 import ast
 import unittest
 
+from py_doctor.rules.ast_utils import annotate_parents
 from py_doctor.rules.async_rules import BlockingIOInAsyncRule, MissingAwaitRule
 from py_doctor.rules.database_rules import (
     ConnectionLeakRule,
+    MissingPoolConfigRule,
     NPlusOneQueryRule,
     SlowQueryDetectionRule,
+    TransactionManagementRule,
 )
 from py_doctor.rules.fastapi_rules import (
     BareExceptSwallowRule,
@@ -16,10 +19,18 @@ from py_doctor.rules.fastapi_rules import (
     MutableDefaultArgumentRule,
     SyncInAsyncRouteRule,
 )
-from py_doctor.rules.pydantic_rules import MissingValidatorRule, UnsafeFieldRule
+from py_doctor.rules.pydantic_rules import (
+    MissingFieldDefaultsRule,
+    MissingValidatorRule,
+    UnsafeFieldRule,
+)
 from py_doctor.rules.sqlalchemy_rules import (
     MissingAsyncQueryRule,
+    MissingIndexRule,
     MissingSessionCloseRule,
+)
+from py_doctor.rules.sqlalchemy_rules import (
+    NPlusOneQueryRule as SqlAlchemyNPlusOneQueryRule,
 )
 from py_doctor.rules.structlog_rules import (
     MissingContextLoggingRule,
@@ -30,6 +41,7 @@ from py_doctor.rules.structlog_rules import (
 
 def parse_and_check(rule_cls, code: str, rel_path: str = "test.py"):
     tree = ast.parse(code)
+    annotate_parents(tree)
     return rule_cls.check(tree, code, rel_path)
 
 
@@ -264,7 +276,6 @@ except Exception:
 """
         self.assertEqual(len(parse_and_check(MissingExceptionLoggingRule, good_code)), 0)
 
-
     def test_insecure_cors(self):
         bad_code = """
 app.add_middleware(
@@ -396,7 +407,154 @@ async def get_items():
 """
         self.assertEqual(len(parse_and_check(InvalidRoutePathRule, valid_path)), 0)
 
+    def test_transaction_management_no_false_positives(self):
+        # Benign dictionary update and list insert MUST NOT be flagged as missing DB transactions
+        dict_update_code = """
+def update_profile(data: dict):
+    local_map = {}
+    local_map.update(data)
+    local_map.update({"status": "active"})
+    return local_map
+"""
+        self.assertEqual(len(parse_and_check(TransactionManagementRule, dict_update_code)), 0)
+
+        list_insert_code = """
+def prepend_item(items: list):
+    items.insert(0, "first_item")
+    return items
+"""
+        self.assertEqual(len(parse_and_check(TransactionManagementRule, list_insert_code)), 0)
+
+    def test_transaction_management_detects_uncommitted_db_write(self):
+        # Real DB write without commit/rollback should be flagged
+        bad_code = """
+def update_user_status(user_id: int):
+    session.execute("UPDATE users SET active = 1 WHERE id = :id", {"id": user_id})
+"""
+        diags = parse_and_check(TransactionManagementRule, bad_code)
+        self.assertEqual(len(diags), 1)
+        self.assertEqual(diags[0]["rule"], "database/transaction-management")
+
+        # Protected by context manager or commit should not be flagged
+        good_code = """
+def update_user_status(user_id: int):
+    with session.begin():
+        session.execute("UPDATE users SET active = 1 WHERE id = :id", {"id": user_id})
+"""
+        self.assertEqual(len(parse_and_check(TransactionManagementRule, good_code)), 0)
+
+    def test_n_plus_one_dict_get_not_flagged(self):
+        # dict.get inside a loop MUST NOT be flagged as an N+1 query
+        dict_get_code = """
+def lookup_cache(user_ids, cache):
+    results = []
+    for uid in user_ids:
+        cached = cache.get(uid)
+        results.append(cached)
+    return results
+"""
+        self.assertEqual(len(parse_and_check(SqlAlchemyNPlusOneQueryRule, dict_get_code)), 0)
+        self.assertEqual(len(parse_and_check(NPlusOneQueryRule, dict_get_code)), 0)
+
+    def test_sqlalchemy_n_plus_one_detected(self):
+        bad_code = """
+def fetch_users(user_ids):
+    results = []
+    for uid in user_ids:
+        u = session.query(User).filter_by(id=uid).first()
+        results.append(u)
+    return results
+"""
+        diags = parse_and_check(SqlAlchemyNPlusOneQueryRule, bad_code)
+        self.assertEqual(len(diags), 1)
+        self.assertEqual(diags[0]["rule"], "sqlalchemy/n-plus-one")
+
+    def test_hardcoded_secret_safe_keys_excluded(self):
+        # Benign constants with KEY in them MUST NOT trigger false alarms
+        safe_code = """
+CACHE_KEY = "user_profile_cache"
+PRIMARY_KEY = "record_id"
+PUBLIC_KEY = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC"
+SORT_KEY = "created_at_desc"
+"""
+        self.assertEqual(len(parse_and_check(HardcodedSecretRule, safe_code)), 0)
+
+    def test_unsafe_field_safe_keys_and_settings(self):
+        # Safe fields on BaseModel
+        safe_model = """
+class CacheEntry(BaseModel):
+    primary_key: str = "id"
+    cache_key: str = "prefix"
+    public_key: str = "pub_123"
+"""
+        self.assertEqual(len(parse_and_check(UnsafeFieldRule, safe_model)), 0)
+
+        # BaseSettings with sensitive field default MUST be flagged
+        settings_code = """
+class AppSettings(BaseSettings):
+    api_key: str = "raw-secret-token-abc"
+"""
+        diags = parse_and_check(UnsafeFieldRule, settings_code)
+        self.assertEqual(len(diags), 1)
+        self.assertEqual(diags[0]["rule"], "pydantic/unsafe-field")
+
+    def test_missing_index_modern_and_legacy(self):
+        # Legacy Column without index
+        legacy_bad = """
+class Order(Base):
+    customer_id = Column(Integer, ForeignKey("customers.id"))
+"""
+        diags = parse_and_check(MissingIndexRule, legacy_bad)
+        self.assertEqual(len(diags), 1)
+        self.assertEqual(diags[0]["rule"], "sqlalchemy/missing-index")
+
+        # Modern SQLAlchemy 2.0 mapped_column without index
+        modern_bad = """
+class Order(Base):
+    customer_id = mapped_column(Integer, ForeignKey("customers.id"))
+"""
+        diags = parse_and_check(MissingIndexRule, modern_bad)
+        self.assertEqual(len(diags), 1)
+        self.assertEqual(diags[0]["rule"], "sqlalchemy/missing-index")
+
+        # With index=True should NOT be flagged
+        indexed_good = """
+class Order(Base):
+    customer_id = mapped_column(Integer, ForeignKey("customers.id"), index=True)
+"""
+        self.assertEqual(len(parse_and_check(MissingIndexRule, indexed_good)), 0)
+
+    def test_missing_pool_config(self):
+        # Production DB without pool config
+        bad_engine = """
+engine = create_engine("postgresql://user:pass@localhost:5432/mydb")
+"""
+        diags = parse_and_check(MissingPoolConfigRule, bad_engine)
+        self.assertEqual(len(diags), 1)
+        self.assertEqual(diags[0]["rule"], "database/missing-pool-config")
+
+        # Configured pool
+        good_engine = """
+engine = create_engine("postgresql://user:pass@localhost:5432/mydb", pool_size=10, max_overflow=20)
+"""
+        self.assertEqual(len(parse_and_check(MissingPoolConfigRule, good_engine)), 0)
+
+        # SQLite should be skipped
+        sqlite_engine = """
+engine = create_engine("sqlite:///local.db")
+"""
+        self.assertEqual(len(parse_and_check(MissingPoolConfigRule, sqlite_engine)), 0)
+
+    def test_missing_field_defaults(self):
+        model_code = """
+class UserCreate(BaseModel):
+    username: str
+    password: str
+"""
+        diags = parse_and_check(MissingFieldDefaultsRule, model_code)
+        self.assertEqual(len(diags), 2)
+        self.assertEqual(diags[0]["rule"], "pydantic/missing-field-defaults")
+
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -1,6 +1,6 @@
 [project]
 name = "py_doctor"
-version = "2.0.1"
+version = "2.0.2"
 description = "Comprehensive FastAPI project health checker"
 authors = [{name = "aswin"}]
 readme = "README.md"
@@ -22,6 +22,7 @@ dev = [
 
 [project.scripts]
 py_doctor = "py_doctor.cli:main"
+py-doctor = "py_doctor.cli:main"
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]

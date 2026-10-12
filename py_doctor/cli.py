@@ -17,9 +17,14 @@ from py_doctor.config import Config
 from py_doctor.reporter import Reporter
 from py_doctor.scorer import calculate_score, categorize_issues
 
-__version__ = "2.0.1"
+__version__ = "2.0.2"
 __author__ = "aswin"
 __description__ = "Diagnose and fix your FastAPI project health"
+
+
+def _write_text_file(path: str, content: str) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
 
 
 def get_version() -> str:
@@ -63,17 +68,44 @@ def main() -> None:
     )
 
     parser.add_argument("path", nargs="?", default=".", help="Project path to scan")
-    parser.add_argument("--verbose", action="store_true", help="Show detailed descriptions for each issue")
-    parser.add_argument("--score", action="store_true", help="Print only the final score (useful for CI/CD)")
-    parser.add_argument("--fix", action="store_true", help="Auto-fix safe linting and formatting errors before scoring")
+    parser.add_argument(
+        "--verbose", action="store_true", help="Show detailed descriptions for each issue"
+    )
+    parser.add_argument(
+        "--score", action="store_true", help="Print only the final score (useful for CI/CD)"
+    )
+    parser.add_argument(
+        "--fix",
+        action="store_true",
+        help="Auto-fix safe linting and formatting errors before scoring",
+    )
     parser.add_argument("--no-lint", action="store_true", help="Skip Ruff linting pass")
-    parser.add_argument("--no-dead-code", action="store_true", help="Skip Vulture dead code detection")
+    parser.add_argument(
+        "--no-dead-code", action="store_true", help="Skip Vulture dead code detection"
+    )
     parser.add_argument("--no-types", action="store_true", help="Skip Mypy type checking")
-    parser.add_argument("--no-security", action="store_true", help="Skip Pip-audit dependency vulnerability scan")
+    parser.add_argument(
+        "--no-security", action="store_true", help="Skip Pip-audit dependency vulnerability scan"
+    )
     parser.add_argument("--no-md", action="store_true", help="Skip generating NEEDEDFIX.md")
-    parser.add_argument("--format", choices=["terminal", "json", "html"], default="terminal", help="Report output format")
-    parser.add_argument("--output", type=str, default=None, help="Save report to specified file path (e.g. report.html)")
-    parser.add_argument("--threshold", type=int, default=None, help="Minimum health score required to pass (overrides config)")
+    parser.add_argument(
+        "--format",
+        choices=["terminal", "json", "html"],
+        default="terminal",
+        help="Report output format",
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default=None,
+        help="Save report to specified file path (e.g. report.html)",
+    )
+    parser.add_argument(
+        "--threshold",
+        type=int,
+        default=None,
+        help="Minimum health score required to pass (overrides config)",
+    )
     parser.add_argument(
         "--diff",
         nargs="?",
@@ -84,7 +116,6 @@ def main() -> None:
 
     args = parser.parse_args()
     asyncio.run(run(args))
-
 
 
 async def run(args: argparse.Namespace) -> None:
@@ -115,14 +146,16 @@ async def run(args: argparse.Namespace) -> None:
     if fix_opt:
         if not is_quiet_mode:
             with console.status("[bold yellow]Applying automatic fixes...[/bold yellow]"):
-                subprocess.run(
+                await asyncio.to_thread(
+                    subprocess.run,
                     ["ruff", "check", project_path, "--fix", "--quiet"],
                     capture_output=True,
                     check=False,
                 )
             console.print("[bold green]✓[/bold green] Auto-fixes applied\n")
         else:
-            subprocess.run(
+            await asyncio.to_thread(
+                subprocess.run,
                 ["ruff", "check", project_path, "--fix", "--quiet"],
                 capture_output=True,
                 check=False,
@@ -175,8 +208,7 @@ async def run(args: argparse.Namespace) -> None:
         }
         json_str = json.dumps(output, indent=2)
         if output_opt:
-            with open(output_opt, "w", encoding="utf-8") as f:
-                f.write(json_str)
+            await asyncio.to_thread(_write_text_file, output_opt, json_str)
             if not score_opt:
                 print(f"JSON report generated: {output_opt}")
         else:
@@ -247,7 +279,6 @@ async def run(args: argparse.Namespace) -> None:
     # Fail the CI build if the score drops below the configured threshold
     if score < threshold:
         sys.exit(1)
-
 
 
 async def run_analysis(

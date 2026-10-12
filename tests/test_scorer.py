@@ -43,7 +43,9 @@ class TestScorer(unittest.TestCase):
         self.assertEqual(cats["errors"], 6)
         self.assertEqual(cats["warnings"], 1)
         self.assertEqual(cats["dead_code"], 1)
-        self.assertEqual(cats["critical"], 3)  # hardcoded-secret + insecure-cors + mutable-default-argument
+        self.assertEqual(
+            cats["critical"], 3
+        )  # hardcoded-secret + insecure-cors + mutable-default-argument
         self.assertEqual(cats["security"], 3)  # hardcoded-secret + insecure-cors + bandit/B105
         self.assertEqual(cats["dependencies"], 1)  # audit/PYSEC-2023-1
 

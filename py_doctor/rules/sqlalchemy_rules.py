@@ -1,6 +1,7 @@
 import ast
 from typing import Any
 
+from .ast_utils import annotate_parents, is_db_caller
 from .base_rule import BaseRule
 
 
@@ -53,11 +54,7 @@ class MissingAsyncQueryRule(BaseRule):
 
     @classmethod
     def check(cls, tree: ast.Module, source: str, rel_path: str) -> list[dict[str, Any]]:
-        if not getattr(tree, "_parent_annotated", False):
-            for parent in ast.walk(tree):
-                for child in ast.iter_child_nodes(parent):
-                    child.parent = parent
-            tree._parent_annotated = True
+        annotate_parents(tree)
 
         diagnostics: list[dict[str, Any]] = []
         for node in ast.walk(tree):
@@ -88,7 +85,7 @@ class MissingAsyncQueryRule(BaseRule):
             return not isinstance(parent, ast.Await)
         if attr in ("query", "all", "first"):
             val = getattr(node.func, "value", None)
-            if isinstance(val, ast.Name) and val.id.lower() in ("db", "session", "sync_session"):
+            if is_db_caller(val):
                 return True
             if (
                 isinstance(val, ast.Call)
@@ -109,7 +106,7 @@ class NPlusOneQueryRule(BaseRule):
         diagnostics: list[dict[str, Any]] = []
         for node in ast.walk(tree):
             if (
-                isinstance(node, (ast.For, ast.While))
+                isinstance(node, (ast.For, ast.AsyncFor, ast.While))
                 and cls._has_query_in_loop(node)
                 and not cls._has_eager_loading(tree)
             ):
@@ -127,12 +124,14 @@ class NPlusOneQueryRule(BaseRule):
     @staticmethod
     def _has_query_in_loop(node: ast.AST) -> bool:
         for child in ast.walk(node):
-            if (
-                isinstance(child, ast.Call)
-                and isinstance(child.func, ast.Attribute)
-                and child.func.attr in ("execute", "query", "get", "filter")
-            ):
-                return True
+            if isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute):
+                attr = child.func.attr
+                val = getattr(child.func, "value", None)
+                if attr in ("execute", "query", "filter", "scalars"):
+                    if is_db_caller(val):
+                        return True
+                elif attr in ("get", "all", "first", "one") and is_db_caller(val):
+                    return True
         return False
 
     @staticmethod
@@ -178,32 +177,41 @@ class MissingIndexRule(BaseRule):
         if not isinstance(node, ast.ClassDef):
             return False
         return any(
-            isinstance(base, ast.Name) and base.id in ("Base", "Model") for base in node.bases
+            (isinstance(base, ast.Name) and base.id in ("Base", "Model", "DeclarativeBase"))
+            or (
+                isinstance(base, ast.Attribute)
+                and base.attr in ("Base", "Model", "DeclarativeBase")
+            )
+            for base in node.bases
         )
 
     @staticmethod
     def _is_column_definition(node: ast.AST) -> bool:
-        return (
-            isinstance(node, ast.Assign)
-            and isinstance(node.value, ast.Call)
-            and isinstance(node.value.func, ast.Name)
-            and node.value.func.id in ("Column", "db.Column")
-        )
+        if not (isinstance(node, (ast.Assign, ast.AnnAssign)) and isinstance(node.value, ast.Call)):
+            return False
+        func = node.value.func
+        if isinstance(func, ast.Name):
+            return func.id in ("Column", "mapped_column")
+        if isinstance(func, ast.Attribute):
+            return func.attr in ("Column", "mapped_column")
+        return False
 
     @staticmethod
     def _get_column_name(node: ast.AST) -> str:
         if isinstance(node, ast.Assign) and node.targets and isinstance(node.targets[0], ast.Name):
             return node.targets[0].id
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            return node.target.id
         return ""
 
     @staticmethod
     def _has_index(node: ast.AST) -> bool:
-        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Call):
+        if not (isinstance(node, (ast.Assign, ast.AnnAssign)) and isinstance(node.value, ast.Call)):
             return False
         if not node.value.keywords:
             return False
         return any(
-            kw.arg == "index" and isinstance(kw.value, ast.Constant) and kw.value.value
+            kw.arg == "index" and isinstance(kw.value, ast.Constant) and bool(kw.value.value)
             for kw in node.value.keywords
         )
 
